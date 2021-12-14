@@ -9,7 +9,8 @@
  **/
 package org.pih.warehouse.shipping
 
-import org.grails.plugins.csv.CSVMapReader
+import org.apache.commons.csv.CSVFormat
+import org.apache.commons.csv.CSVParser
 import org.pih.warehouse.core.Person
 import org.pih.warehouse.core.UnitOfMeasure
 import org.pih.warehouse.inventory.InventoryItem
@@ -38,8 +39,7 @@ class CombinedShipmentService {
         List orderItems = []
         try {
             def settings = [skipLines: 1]
-            def csvMapReader = new CSVMapReader(new StringReader(text), settings)
-            csvMapReader.fieldKeys = [
+            CSVParser csvParser = CSVParser(text, CSVFormat.DEFAULT.withSkipHeaderRecord().withHeader(
                     'orderNumber',
                     'id',
                     'productCode',
@@ -49,11 +49,11 @@ class CombinedShipmentService {
                     'quantityToShip',
                     'unitOfMeasure',
                     'palletName', // pack level 1
-                    'boxName', // pack level 2]
+                    'boxName', // pack level 2
                     'recipient',
-                    'budgetCode',
-            ]
-            orderItems = csvMapReader.toList()
+                    'budgetCode')
+            )
+            orderItems = csvParser.getRecords()
 
         } catch (Exception e) {
             throw new RuntimeException("Error parsing order item CSV: " + e.message, e)

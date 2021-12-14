@@ -19,8 +19,8 @@ import org.pih.warehouse.core.GlAccount
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.Tag
 import org.pih.warehouse.core.UnitOfMeasure
+import org.pih.warehouse.importer.CSVUtils
 import org.pih.warehouse.importer.ImportDataCommand
-import util.ReportUtil
 
 import java.text.SimpleDateFormat
 /**
@@ -801,7 +801,7 @@ class ProductService {
             }
             rows << row
         }
-        return ReportUtil.getCsvForListOfMapEntries(rows)
+        return CSVUtils.dumpMaps(rows)
     }
 
     /**

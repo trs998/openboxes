@@ -14,12 +14,14 @@ import org.apache.commons.csv.CSVPrinter
 import org.apache.commons.lang.StringUtils
 import org.pih.warehouse.util.LocalizationUtil
 
+import java.text.DateFormat
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
 
 /**
- * Handy functions for parsing numbers from, and writing them to, CSV files.
+ * Handy functions for parsing data from, and writing it to, CSV files.
  *
  * Grails's numberFormat() routines are optimized for displaying human-
  * readable numbers on a display, and include things like grouping
@@ -66,6 +68,35 @@ class CSVUtils {
         } catch (ArithmeticException e) {
             throw new IllegalArgumentException("Expected integer value for ${fieldName}=${s}")
         }
+    }
+
+    /**
+     * Format a date for inclusion in a CSV file.
+     *
+     * @param date a Date object
+     * @return a localized string representation of `date` that Excel can reliably import via CSV.
+     *
+     * We start with the current locale's SHORT format for day, month and year,
+     * then force days and months to be two characters wide, and years, four:
+     * e.g., January 2, 2023, in the US locale, is formatted 01/02/2023.
+     */
+    static String formatDate(Date date, Boolean includeTime = false) {
+        if (!date) {
+            return ""
+        }
+
+        String localizedDateFormat = (DateFormat.getDateInstance(
+            DateFormat.SHORT, LocalizationUtil.localizationService.currentLocale
+        ) as SimpleDateFormat).toPattern()
+
+        def adjustedFormatter = new SimpleDateFormat(
+            localizedDateFormat.concat(includeTime ? " hh:mm:ss" : "").replaceAll(
+                /y+/, "yyyy").replaceAll(
+                /M+/, "MM").replaceAll(
+                /d+/, "dd")
+        )
+
+        return adjustedFormatter.format(date)
     }
 
     /**
@@ -148,5 +179,23 @@ class CSVUtils {
      */
     static CSVPrinter getCSVPrinter() {
         return new CSVPrinter(new StringBuilder(), CSVFormat.DEFAULT)
+    }
+
+    /**
+     * Print a list of maps to CSV.
+     * @param list a List of maps, all containing identical keys.
+     * @return a string representation of the data in CSV format.
+     *
+     * The keys from the first map encountered are taken as column headers.
+     */
+    static String dumpMaps(List<Map<String, String>> list) {
+        def csv = getCSVPrinter()
+        if (list) {
+            csv.printRecord(list[0].keySet())
+            list.each { entry ->
+                csv.printRecord(entry.values())
+            }
+        }
+        return csv.out.toString()
     }
 }

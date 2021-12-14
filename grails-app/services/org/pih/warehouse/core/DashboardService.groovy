@@ -9,13 +9,12 @@
  **/
 package org.pih.warehouse.core
 
-import org.grails.plugins.csv.CSVWriter
+import org.pih.warehouse.importer.CSVUtils
 import org.pih.warehouse.inventory.InventoryItem
 import org.pih.warehouse.inventory.InventoryLevel
 import org.pih.warehouse.inventory.InventoryStatus
 import org.pih.warehouse.inventory.TransactionCode
 import org.pih.warehouse.inventory.TransactionEntry
-import org.pih.warehouse.product.Category
 import org.pih.warehouse.requisition.RequisitionItem
 
 import java.text.SimpleDateFormat
@@ -323,29 +322,18 @@ class DashboardService {
             inventoryLevelMap[inventoryLevel.product] = inventoryLevel
         }
 
-
-        def csvWriter = new CSVWriter(sw, {
-            "Product Code" { it.productCode }
-            "Name" { it.name }
-            "ABC" { it.abcClass }
-            "Most Recent Stock Count" { it.latestInventoryDate }
-            "QoH" { it.quantityOnHand }
-            "Unit of Measure" { it.unitOfMeasure }
-        })
-
-        products.each { product ->
+        def records = products.collect { product ->
             def latestInventoryDate = latestInventoryDateMap[product.id]
-            def row = [
-                    productCode        : product.productCode ?: "",
-                    name               : product.name,
-                    unitOfMeasure      : product.unitOfMeasure ?: "",
-                    abcClass           : inventoryLevelMap[product]?.abcClass ?: "",
-                    latestInventoryDate: latestInventoryDate ? "${formatDate.format(latestInventoryDate)}" : "",
-                    quantityOnHand     : quantityMap[product] ?: ""
+            return [
+                "Product Code"           : product?.productCode,
+                "Name"                   : product?.name,
+                "ABC"                    : inventoryLevelMap[product]?.abcClass,
+                "Most Recent Stock Count": CSVUtil.formatDate(latestInventoryDate),
+                "QoH"                    : quantityMap[product],
+                "Unit of Measure"        : product?.unitOfMeasure
             ]
-            csvWriter << row
         }
-        return sw.toString()
+        return CSVUtils.dumpMaps(records)
     }
 
 

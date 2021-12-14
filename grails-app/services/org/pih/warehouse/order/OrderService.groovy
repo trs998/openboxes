@@ -10,9 +10,9 @@
 package org.pih.warehouse.order
 
 import grails.validation.ValidationException
-import java.math.RoundingMode
+import org.apache.commons.csv.CSVFormat
+import org.apache.commons.csv.CSVParser
 import org.codehaus.groovy.grails.commons.ConfigurationHolder
-import org.grails.plugins.csv.CSVMapReader
 import org.hibernate.criterion.CriteriaSpecification
 import org.pih.warehouse.core.BudgetCode
 import org.pih.warehouse.core.Constants
@@ -39,7 +39,8 @@ import org.pih.warehouse.receiving.Receipt
 import org.pih.warehouse.shipping.Shipment
 import org.pih.warehouse.shipping.ShipmentException
 import org.pih.warehouse.shipping.ShipmentItem
-import util.ReportUtil
+
+import java.math.RoundingMode
 
 class OrderService {
 
@@ -765,9 +766,7 @@ class OrderService {
         List orderItems = []
 
         try {
-            def settings = [skipLines: 1]
-            def csvMapReader = new CSVMapReader(new StringReader(text), settings)
-            csvMapReader.fieldKeys = [
+            CSVParser csvParser = CSVParser(text, CSVFormat.DEFAULT.withSkipHeaderRecord().withHeader(
                 'id',
                 'productCode',
                 'productName',
@@ -783,9 +782,9 @@ class OrderService {
                 'recipient',
                 'estimatedReadyDate',
                 'actualReadyDate',
-                'budgetCode'
-            ]
-            orderItems = csvMapReader.toList()
+                'budgetCode')
+            )
+            orderItems = csvParser.getRecords()
 
         } catch (Exception e) {
             throw new RuntimeException("Error parsing order item CSV: " + e.message, e)
@@ -914,23 +913,20 @@ class OrderService {
     }
 
     String exportOrderItems(List<OrderItem> orderItems) {
-        def rows = []
-        orderItems.each { orderItem ->
-            def row = [
-                    'Order Item ID'       : orderItem?.id,
-                    'Pack level 1'        : '',
-                    'Pack level 2'        : '',
-                    'Code'                : orderItem?.product?.productCode,
-                    'Product'             : orderItem?.product?.name,
-                    'UOM'                 : orderItem?.unitOfMeasure,
-                    'Lot'                 : '',
-                    'Expiry (mm/dd/yyyy)' : '',
-                    'Qty to ship'         : orderItem.quantityRemaining,
+        def records = orderItems.collect { orderItem ->
+            [
+                'Order Item ID'      : orderItem?.id,
+                'Pack level 1'       : '',
+                'Pack level 2'       : '',
+                'Code'               : orderItem?.product?.productCode,
+                'Product'            : orderItem?.product?.name,
+                'UOM'                : orderItem?.unitOfMeasure,
+                'Lot'                : '',
+                'Expiry (mm/dd/yyyy)': '',
+                'Qty to ship'        : orderItem?.quantityRemaining,
             ]
-
-            rows << row
         }
-        return ReportUtil.getCsvForListOfMapEntries(rows)
+        return CSVUtils.dumpMaps(records)
     }
 
     def canManageAdjustments(Order order, User user) {

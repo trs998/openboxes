@@ -239,7 +239,7 @@ class StockMovementApiController {
         }
         String csv = dataService.generateCsv(lineItems)
         response.setHeader("Content-disposition", "attachment; filename=\"StockMovementItems-${params.id}.csv\"")
-        render(contentType: "text/csv", text: csv.toString(), encoding: "UTF-8")
+        render(contentType: "text/csv", text: csv)
     }
 
     def importPickListItems = { ImportDataCommand command ->

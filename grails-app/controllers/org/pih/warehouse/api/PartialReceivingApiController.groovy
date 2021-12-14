@@ -90,7 +90,7 @@ class PartialReceivingApiController {
 
         String csv = dataService.generateCsv(lineItems)
         response.setHeader("Content-disposition", "attachment; filename=\"PartialReceiving-${params.id}.csv\"")
-        render(contentType: "text/csv", text: csv.toString(), encoding: "UTF-8")
+        render(contentType: "text/csv", text: csv)
     }
 
     def importCsv = { ImportDataCommand command ->
@@ -210,5 +210,3 @@ class PartialReceivingApiController {
         }
     }
 }
-
-

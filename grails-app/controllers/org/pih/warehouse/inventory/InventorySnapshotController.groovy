@@ -89,7 +89,7 @@ class InventorySnapshotController {
         println "CSV: " + csv
         def filename = "Stock-${location?.name}-${date.format("dd MMM yyyy")}.csv"
         response.setHeader("Content-disposition", "attachment; filename=\"${filename}\"")
-        render(contentType: "text/csv", text: csv.toString(), encoding: "UTF-8")
+        render(contentType: "text/csv", text: csv)
 
     }
 

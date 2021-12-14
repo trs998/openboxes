@@ -32,7 +32,7 @@ class DataExportController {
             if (params.format == "csv") {
                 String csv = dataService.generateCsv(data)
                 response.setHeader("Content-disposition", "attachment; filename=\"${document.name}.csv\"")
-                render(contentType: "text/csv", text: csv.toString(), encoding: "UTF-8")
+                render(contentType: "text/csv", text: csv)
                 return
             }
             render dataService.executeQuery(query) as JSON
