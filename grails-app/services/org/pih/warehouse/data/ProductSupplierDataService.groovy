@@ -138,7 +138,7 @@ class ProductSupplierDataService {
         command.data.eachWithIndex { params, index ->
             ProductSupplier productSupplier = createOrUpdate(params)
             if (productSupplier.validate()) {
-                productSupplier.save(failOnError: true)
+                productSupplier.save(failOnError: true, flush: true)
             }
         }
     }
