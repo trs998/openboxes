@@ -2404,18 +2404,15 @@ class StockMovementService {
     }
 
     void issueShipmentBasedStockMovement(String id) {
-        User user = AuthService.currentUser.get()
         StockMovement stockMovement = getStockMovement(id)
         Shipment shipment = stockMovement.shipment
         if (!shipment) {
             throw new IllegalStateException("There are no shipments associated with stock movement ${stockMovement.id}")
         }
-        shipmentService.sendShipment(shipment, "Sent on ${new Date()}", user, shipment.origin, stockMovement.dateShipped ?: new Date())
+        shipmentService.sendShipment(shipment, "Sent on ${new Date()}", AuthService.currentUser, shipment.origin, stockMovement.dateShipped ?: new Date())
     }
 
     void issueRequisitionBasedStockMovement(String id) {
-
-        User user = AuthService.currentUser.get()
         StockMovement stockMovement = getStockMovement(id)
         Requisition requisition = stockMovement.requisition
         def shipment = requisition.shipment
@@ -2426,7 +2423,7 @@ class StockMovementService {
             throw new IllegalStateException("There are no shipments associated with stock movement ${requisition.requestNumber}")
         }
 
-        shipmentService.sendShipment(shipment, null, user, requisition.origin, stockMovement.dateShipped ?: new Date())
+        shipmentService.sendShipment(shipment, null, AuthService.currentUser, requisition.origin, stockMovement.dateShipped ?: new Date())
     }
 
     void validateRequisition(Requisition requisition) {

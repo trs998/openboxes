@@ -1,27 +1,18 @@
 package org.pih.warehouse.product
 
 import org.junit.Ignore
-
-// import org.apache.commons.lang.StringUtils
 import org.junit.Test
-import org.pih.warehouse.auth.AuthService;
+import org.pih.warehouse.auth.AuthService
 import org.pih.warehouse.core.Constants
 import org.pih.warehouse.core.Role
 import org.pih.warehouse.core.RoleType
-
-// import org.pih.warehouse.core.Location
-// import org.pih.warehouse.core.LocationType
 import org.pih.warehouse.core.Tag
-import org.pih.warehouse.core.User;
-// import org.pih.warehouse.core.User;
-
+import org.pih.warehouse.core.User
 import testutils.DbHelper
 
-
-
 class ProductServiceIntegrationTests extends GroovyTestCase {
-	
-	
+
+
 	def productService
 	def product1;
 	def product2;
@@ -42,7 +33,7 @@ class ProductServiceIntegrationTests extends GroovyTestCase {
 		user.addToRoles(financeRole)
 		user.save()
 
-		AuthService.currentUser.set(user)
+		AuthService.currentUserId = user.id
 
 		product1 = DbHelper.createProductWithGroups("boo floweree 250mg",["Hoo moodiccina", "Boo floweree"])
 		product2 = DbHelper.createProductWithGroups("boo pill",["Boo floweree"])

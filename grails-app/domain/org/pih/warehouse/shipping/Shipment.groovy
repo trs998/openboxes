@@ -30,7 +30,7 @@ import org.pih.warehouse.requisition.Requisition
 class Shipment implements Comparable, Serializable {
 
     def beforeInsert = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             createdBy = currentUser
             updatedBy = currentUser
@@ -40,7 +40,7 @@ class Shipment implements Comparable, Serializable {
 
     }
     def beforeUpdate = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             updatedBy = currentUser
         }
@@ -628,4 +628,3 @@ class Shipment implements Comparable, Serializable {
         return event?.eventDate
     }
 }
-

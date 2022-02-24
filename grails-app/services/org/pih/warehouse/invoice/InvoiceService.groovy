@@ -75,7 +75,7 @@ class InvoiceService {
             return []
         }
 
-        def currentLocation = AuthService?.currentLocation?.get()
+        def currentLocation = AuthService.currentLocation
         List<InvoiceItemCandidate> invoiceItemCandidates = InvoiceItemCandidate.createCriteria()
             .list() {
                 if (invoice.party) {
@@ -109,7 +109,7 @@ class InvoiceService {
             return []
         }
 
-        def currentLocation = AuthService?.currentLocation?.get()
+        def currentLocation = AuthService.currentLocation
         List<InvoiceItemCandidate> invoiceItemCandidates = InvoiceItemCandidate.createCriteria()
             .list() {
                 projections {

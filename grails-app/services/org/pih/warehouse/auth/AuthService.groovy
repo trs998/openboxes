@@ -13,9 +13,15 @@ import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.User
 
 class AuthService {
-
     boolean transactional = true
-    static ThreadLocal<User> currentUser = new ThreadLocal<User>()
-    static ThreadLocal<Location> currentLocation = new ThreadLocal<Location>()
+    public String currentUserId
+    public String currentLocationId
 
+    User getCurrentUser() {
+        return User.get(currentUserId)
+    }
+
+    Location getCurrentLocation() {
+        return Location.get(currentLocationId)
+    }
 }

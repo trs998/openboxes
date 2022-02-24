@@ -70,7 +70,7 @@ class ReceiptService {
      * @return
      */
     PartialReceipt getPartialReceiptFromShipment(Shipment shipment) {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         PartialReceipt partialReceipt = new PartialReceipt()
         partialReceipt.shipment = shipment
         partialReceipt.recipient = currentUser

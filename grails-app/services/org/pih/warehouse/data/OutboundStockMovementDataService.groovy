@@ -92,7 +92,7 @@ class OutboundStockMovementDataService {
             }
             requisition.destination = destination
             requisition.requestedDeliveryDate = deliveryDate.toDate()
-            requisition.requestedBy = AuthService.currentUser.get()
+            requisition.requestedBy = AuthService.currentUser
             requisition.save(failOnError: true)
         }
 

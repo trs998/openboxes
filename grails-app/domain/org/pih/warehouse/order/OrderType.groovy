@@ -16,7 +16,7 @@ import org.pih.warehouse.core.User
 class OrderType implements Serializable {
 
     def beforeInsert = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             createdBy = currentUser
             updatedBy = currentUser
@@ -24,7 +24,7 @@ class OrderType implements Serializable {
     }
 
     def beforeUpdate = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             updatedBy = currentUser
         }

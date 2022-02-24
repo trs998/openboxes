@@ -14,7 +14,7 @@ import org.pih.warehouse.auth.AuthService
 class GlAccountType implements Serializable {
 
     def beforeInsert = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             createdBy = currentUser
             updatedBy = currentUser
@@ -22,7 +22,7 @@ class GlAccountType implements Serializable {
     }
 
     def beforeUpdate = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             updatedBy = currentUser
         }

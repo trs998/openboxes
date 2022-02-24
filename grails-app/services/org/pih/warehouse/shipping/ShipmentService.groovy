@@ -1086,10 +1086,8 @@ class ShipmentService {
             throw new IllegalArgumentException("Can't find shipment for given order: ${order.id}")
         }
 
-        User user = AuthService.currentUser.get()
-
         shipments.each { Shipment shipment ->
-            sendShipment(shipment, null, user, order.origin, shipment?.dateShipped() ?: new Date())
+            sendShipment(shipment, null, AuthService.currentUser, order.origin, shipment?.dateShipped() ?: new Date())
         }
 
         order.status = OrderStatus.COMPLETED
@@ -2271,7 +2269,7 @@ class ShipmentService {
 
     def createShipmentItems(OrderItem orderItem) {
         def shipmentItems = orderItem.shipmentItems ?: []
-        def currentLocation = AuthService?.currentLocation?.get()
+        def currentLocation = AuthService.currentLocation
         if (shipmentItems) {
             shipmentItems.each { ShipmentItem shipmentItem ->
                 if (orderItem?.order?.isOutbound(currentLocation)) {

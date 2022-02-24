@@ -22,14 +22,14 @@ import org.pih.warehouse.shipping.Shipment
 class Requisition implements Comparable<Requisition>, Serializable {
 
     def beforeInsert = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             createdBy = currentUser
             updatedBy = currentUser
         }
     }
     def beforeUpdate = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             updatedBy = currentUser
         }

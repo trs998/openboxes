@@ -195,8 +195,7 @@ class StockTransferService {
         }
         order.save(failOnError: true)
 
-        def currentLocation = AuthService?.currentLocation?.get()
-        if (order.orderType.isReturnOrder() && order.isOutbound(currentLocation) && order?.orderItems) {
+        if (order.orderType.isReturnOrder() && order.isOutbound(AuthService.currentLocation) && order?.orderItems) {
             picklistService.createPicklistFromItem(order)
         }
 

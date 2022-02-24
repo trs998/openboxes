@@ -25,7 +25,7 @@ import org.pih.warehouse.shipping.Shipment
 class Invoice implements Serializable {
 
     def beforeInsert = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             createdBy = currentUser
             updatedBy = currentUser
@@ -33,7 +33,7 @@ class Invoice implements Serializable {
     }
 
     def beforeUpdate = {
-        def currentUser = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser
         if (currentUser) {
             updatedBy = currentUser
         }

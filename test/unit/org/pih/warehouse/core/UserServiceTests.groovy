@@ -67,8 +67,7 @@ class UserServiceTests extends GrailsUnitTestCase {
         user6.addToLocationRoles(locationRole3)
         user1.addToLocationRoles(locationRole4)
 
-        AuthService.currentLocation = new ThreadLocal<Location>()
-        AuthService.currentLocation.set(boston)
+        AuthService.currentLocationId = boston.id
 
         service = new UserService()
     }

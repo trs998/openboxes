@@ -1017,7 +1017,7 @@ class InventoryService implements ApplicationContextAware {
      * @return current location from thread local
      */
     Location getCurrentLocation() {
-        def currentLocation = AuthService?.currentLocation?.get()
+        def currentLocation = AuthService.currentLocation
         if (!currentLocation?.inventory)
             throw new Exception("Inventory not found")
         return currentLocation
@@ -3364,4 +3364,3 @@ class InventoryService implements ApplicationContextAware {
     }
 
 }
-

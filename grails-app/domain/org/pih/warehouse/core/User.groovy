@@ -43,6 +43,7 @@ class User extends Person {
         locationRoles cascade: "all-delete-orphan"
         id generator: 'uuid'
         dashboardConfig(sqlType: "longblob")
+        cache true
     }
     static transients = ["passwordConfirm"]
     static constraints = {

@@ -17,7 +17,7 @@ class Tag implements Serializable {
 
     def beforeInsert = {
         User.withNewSession {
-            def currentUser = AuthService.currentUser.get()
+            def currentUser = AuthService.currentUser
             if (currentUser) {
                 createdBy = currentUser
                 updatedBy = currentUser
@@ -26,7 +26,7 @@ class Tag implements Serializable {
     }
     def beforeUpdate = {
         User.withNewSession {
-            def currentUser = AuthService.currentUser.get()
+            def currentUser = AuthService.currentUser
             if (currentUser) {
                 updatedBy = currentUser
             }

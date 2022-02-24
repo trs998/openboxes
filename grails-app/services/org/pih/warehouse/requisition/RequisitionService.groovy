@@ -260,7 +260,7 @@ class RequisitionService {
                     eq("status", requisition.status)
                 }
                 if (params?.relatedToMe) {
-                    def currentUser = AuthService.getCurrentUser().get()
+                    def currentUser = AuthService.currentUser
                     or {
                         eq("createdBy.id", currentUser.id)
                         eq("updatedBy.id", currentUser.id)

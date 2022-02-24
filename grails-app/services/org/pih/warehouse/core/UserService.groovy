@@ -214,7 +214,7 @@ class UserService {
     }
 
     Boolean canEditUserRoles(User currentUser, User otherUser) {
-        def location = AuthService.currentLocation.get()
+        def location = AuthService.currentLocation
         return isSuperuser(currentUser) || (currentUser.getHighestRole(location) >= otherUser.getHighestRole(location))
     }
 
@@ -233,12 +233,11 @@ class UserService {
     }
 
     boolean hasRoleFinance() {
-        User user = AuthService.currentUser.get()
-        return hasRoleFinance(user)
+        return hasRoleFinance(AuthService.currentUser)
     }
 
     void assertCurrentUserHasRoleFinance() {
-        User user = AuthService.currentUser.get()
+        User user = AuthService.currentUser
         if (!hasRoleFinance(user)) {
             throw new IllegalStateException("User ${user.username} must have ROLE_FINANCE role")
         }
@@ -346,8 +345,7 @@ class UserService {
     }
 
     private def getEffectiveRoles(User user) {
-        def currentLocation = AuthService.currentLocation?.get()
-        return user.getEffectiveRoles(currentLocation)
+        return user.getEffectiveRoles(AuthService.currentLocation)
     }
 
 

@@ -587,7 +587,7 @@ class ProductService {
 
         int rowCount = 1
 
-        Location currentLocation = AuthService?.currentLocation?.get()
+        Location currentLocation = AuthService.currentLocation
 
         // Iterate over each line and either update an existing product or create a new product
         csv.toCsvReader(['skipLines': 1, 'separatorChar': delimiter]).eachLine { tokens ->
