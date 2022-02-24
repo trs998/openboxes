@@ -39,14 +39,14 @@ class SecurityFilters {
                     if (!AuthService.currentUser) {
                         AuthService.currentUser = new ThreadLocal<User>()
                     }
-                    AuthService.currentUser.set(User.get(session.user.id))
+                    AuthService.currentUser.set(User.get(session.user.id).refresh())
                 }
 
                 if (session.warehouse) {
                     if (!AuthService.currentLocation) {
                         AuthService.currentLocation = new ThreadLocal<Location>()
                     }
-                    AuthService.currentLocation.set(Location.get(session.warehouse.id))
+                    AuthService.currentLocation.set(Location.get(session.warehouse.id).refresh())
                 }
 
                 // This allows requests for the health monitoring endpoint to pass through without a user
