@@ -135,9 +135,13 @@ class ProductSupplierDataService {
         log.info "Process data " + command.filename
 
         command.data.eachWithIndex { params, index ->
+            log.info "got here A"
             ProductSupplier productSupplier = createOrUpdate(params)
+            log.info "got here B"
             if (productSupplier.validate()) {  // pretty sure we already did this
+                log.info "got here C"
                 productSupplier.save(failOnError: true, flush: (index == 0))
+                log.info "got here D"
             }
         }
     }
@@ -159,7 +163,9 @@ class ProductSupplierDataService {
                 new BigDecimal(params.defaultProductPackagePrice) : null
         Integer quantity = params.defaultProductPackageQuantity as Integer
 
+        log.info "about to call ProductSupplier.findByIdOrCode(${params['id']}, ${params['code']})"
         ProductSupplier productSupplier = ProductSupplier.findByIdOrCode(params["id"], params["code"])
+        log.info "got here 2"
         if (!productSupplier) {
             log.info("creating a new product supplier")
             productSupplier = new ProductSupplier(params)
