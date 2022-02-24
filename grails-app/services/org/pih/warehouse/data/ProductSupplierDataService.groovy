@@ -77,7 +77,7 @@ class ProductSupplierDataService {
                 command.errors.reject("Row ${index + 1}: Preference Type with name '${preferenceType}' does not exist")
             }
 
-            log.info("uomCode " + uomCode)
+            log.info "uomCode ${index + 1} ${uomCode}"
             if (uomCode) {
                 def unitOfMeasure = UnitOfMeasure.findByCode(uomCode)
                 if (!unitOfMeasure) {
@@ -136,7 +136,7 @@ class ProductSupplierDataService {
 
         command.data.eachWithIndex { params, index ->
             ProductSupplier productSupplier = createOrUpdate(params)
-            if (productSupplier.validate()) {
+            if (productSupplier.validate()) {  // pretty sure we already did this
                 productSupplier.save(failOnError: true, flush: (index == 0))
             }
         }
@@ -161,8 +161,10 @@ class ProductSupplierDataService {
 
         ProductSupplier productSupplier = ProductSupplier.findByIdOrCode(params["id"], params["code"])
         if (!productSupplier) {
+            log.info("creating a new product supplier")
             productSupplier = new ProductSupplier(params)
         } else {
+            log.info("editing existing product supplier")
             productSupplier.properties = params
         }
 
@@ -179,21 +181,25 @@ class ProductSupplierDataService {
                     productSupplier.productPackages.find { it.uom == unitOfMeasure && it.quantity == quantity }
 
             if (!defaultProductPackage) {
+                log.info("creating a new product package")
                 defaultProductPackage = new ProductPackage()
                 defaultProductPackage.name = "${unitOfMeasure.code}/${quantity}"
                 defaultProductPackage.description = "${unitOfMeasure.name} of ${quantity}"
                 defaultProductPackage.product = productSupplier.product
                 defaultProductPackage.uom = unitOfMeasure
                 defaultProductPackage.quantity = quantity
+                log.info("creating a new product price")
                 ProductPrice productPrice = new ProductPrice()
                 productPrice.price = price
                 defaultProductPackage.productPrice = productPrice
                 productSupplier.addToProductPackages(defaultProductPackage)
             } else if (price && !defaultProductPackage.productPrice) {
+                log.info("creating a new product price and adding to existing product package")
                 ProductPrice productPrice = new ProductPrice()
                 productPrice.price = price
                 defaultProductPackage.productPrice = productPrice
             } else if (price && defaultProductPackage.productPrice) {
+                log.info("adjusting existing product price")
                 defaultProductPackage.productPrice.price = price
             }
         }
@@ -205,6 +211,7 @@ class ProductSupplierDataService {
 
         if (contractPricePrice) {
             if (!productSupplier.contractPrice) {
+                log.info("creating new contract price")
                 productSupplier.contractPrice = new ProductPrice()
             }
 
@@ -221,6 +228,7 @@ class ProductSupplierDataService {
             ProductSupplierPreference productSupplierPreference = productSupplier.getGlobalProductSupplierPreference()
 
             if (!productSupplierPreference) {
+                log.info("creating new product supplier preference")
                 productSupplierPreference = new ProductSupplierPreference()
                 productSupplier.addToProductSupplierPreferences(productSupplierPreference)
             }
