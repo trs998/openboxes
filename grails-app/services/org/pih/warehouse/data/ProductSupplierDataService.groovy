@@ -10,7 +10,6 @@
 package org.pih.warehouse.data
 
 import groovy.sql.Sql
-import org.pih.warehouse.core.Constants
 import org.pih.warehouse.core.Organization
 import org.pih.warehouse.core.PreferenceType
 import org.pih.warehouse.core.ProductPrice
@@ -138,7 +137,7 @@ class ProductSupplierDataService {
         command.data.eachWithIndex { params, index ->
             ProductSupplier productSupplier = createOrUpdate(params)
             if (productSupplier.validate()) {
-                productSupplier.save(failOnError: true, flush: true)
+                productSupplier.save(failOnError: true, flush: (index == 0))
             }
         }
     }
