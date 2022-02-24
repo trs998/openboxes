@@ -25,19 +25,13 @@ class SecurityFilters {
 
             afterView = {
                 // Clear out current user after rendering the view
-                AuthService.currentUserId = null
-                AuthService.currentLocationId = null
+                AuthService.clearCurrentUser()
+                AuthService.clearCurrentLocation()
             }
             before = {
 
-                // Set the current user (if there's one in the session)
-                if (session.user) {
-                    AuthService.currentUserId = session.user.id
-                }
-
-                if (session.warehouse) {
-                    AuthService.currentLocationId = session.warehouse.id
-                }
+                AuthService.currentUser = session?.user
+                AuthService.currentLocation = session?.warehouse
 
                 // This allows requests for the health monitoring endpoint to pass through without a user
                 if (controllerName.equals("api") && actionName.equals("status")) {

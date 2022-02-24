@@ -14,14 +14,40 @@ import org.pih.warehouse.core.User
 
 class AuthService {
     boolean transactional = true
-    public String currentUserId
-    public String currentLocationId
+    private static ThreadLocal<String> currentUserId = new ThreadLocal<String>()
+    private static ThreadLocal<String> currentLocationId = new ThreadLocal<String>()
 
-    User getCurrentUser() {
-        return User.get(currentUserId)
+    static void setCurrentUser(User user) {
+        currentUserId.set(user?.id)
     }
 
-    Location getCurrentLocation() {
-        return Location.get(currentLocationId)
+    static User getCurrentUser() {
+        String id = currentUserId.get()
+        if (id == null) {
+            return null
+        }
+        return User.get(id)
+    }
+
+    static void clearCurrentUser() {
+        currentUserId.remove()
+        currentUserId.set(null)
+    }
+
+    static void setCurrentLocation(Location location) {
+        currentLocationId.set(location?.id)
+    }
+
+    static Location getCurrentLocation() {
+        String id = currentLocationId.get()
+        if (id == null) {
+            return null
+        }
+        return Location.get(id)
+    }
+
+    static void clearCurrentLocation() {
+        currentLocationId.remove()
+        currentLocationId.set(null)
     }
 }
