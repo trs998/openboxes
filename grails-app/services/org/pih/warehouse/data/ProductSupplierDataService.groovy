@@ -163,8 +163,15 @@ class ProductSupplierDataService {
                 new BigDecimal(params.defaultProductPackagePrice) : null
         Integer quantity = params.defaultProductPackageQuantity as Integer
 
-        log.info "about to call ProductSupplier.findByIdOrCode(${params['id']}, ${params['code']})"
-        ProductSupplier productSupplier = ProductSupplier.findByIdOrCode(params["id"], params["code"])
+        ProductSupplier productSupplier = null
+        if (params["id"]) {
+            log.info "about to call ProductSupplier.findById(${params['id']})"
+            productSupplier = ProductSupplier.findById(params["id"])
+        }
+        if (!productSupplier) {
+            log.info "about to call ProductSupplier.findByCode(${params['code']})"
+            productSupplier = ProductSupplier.findByCode(params["code"])
+        }
         log.info "got here 2"
         if (!productSupplier) {
             log.info("creating a new product supplier")
