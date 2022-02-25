@@ -15,10 +15,17 @@ import org.pih.warehouse.auth.AuthService
 class UnitOfMeasure implements Serializable {
 
     def beforeInsert = {
-        createdBy = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser.get()
+        if (currentUser) {
+            createdBy = currentUser
+            updatedBy = currentUser
+        }
     }
     def beforeUpdate = {
-        updatedBy = AuthService.currentUser.get()
+        def currentUser = AuthService.currentUser.get()
+        if (currentUser) {
+            updatedBy = currentUser
+        }
     }
 
     String id

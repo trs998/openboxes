@@ -18,20 +18,16 @@ import org.pih.warehouse.core.User
 class ProductPackage implements Comparable<ProductPackage>, Serializable {
 
     def beforeInsert = {
-        User.withNewSession {
-            def currentUser = AuthService.currentUser.get()
-            if (currentUser) {
-                createdBy = currentUser
-                updatedBy = currentUser
-            }
+        def currentUser = AuthService.currentUser.get()
+        if (currentUser) {
+            createdBy = currentUser
+            updatedBy = currentUser
         }
     }
     def beforeUpdate = {
-        User.withNewSession {
-            def currentUser = AuthService.currentUser.get()
-            if (currentUser) {
-                updatedBy = currentUser
-            }
+        def currentUser = AuthService.currentUser.get()
+        if (currentUser) {
+            updatedBy = currentUser
         }
     }
 
