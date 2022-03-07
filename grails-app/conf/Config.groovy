@@ -1283,7 +1283,7 @@ openboxes.jobs.sendStockAlertsJob.daysUntilExpiry = 60
 openboxes.jobs.sendStockAlertsJob.cronExpression = "0 0 0 * * ?" // every day at midnight
 
 // Refresh inventory snapshots
-openboxes.jobs.refreshInventorySnapshotJob.enabled = true
+openboxes.jobs.refreshInventorySnapshotJob.enabled = false
 openboxes.jobs.refreshInventorySnapshotJob.retryOnError = false
 openboxes.jobs.refreshInventorySnapshotJob.maxRetryAttempts = 3
 
@@ -1293,7 +1293,7 @@ openboxes.jobs.refreshInventorySnapshotAfterTransactionJob.retryOnError = false
 openboxes.jobs.refreshInventorySnapshotAfterTransactionJob.maxRetryAttempts = 3
 
 // Refresh product availability materialized view
-openboxes.jobs.refreshProductAvailabilityJob.enabled = true
+openboxes.jobs.refreshProductAvailabilityJob.enabled = false
 openboxes.jobs.refreshProductAvailabilityJob.cronExpression = "0 0 0/2 * * ?" // every two hours starting at midnight
 
 // Use delay when transactions are persisted to avoid missing data
@@ -1309,7 +1309,7 @@ openboxes.jobs.refreshStockoutDataJob.enabled = true
 openboxes.jobs.refreshStockoutDataJob.cronExpression = "0 0 1 * * ?" // at 01:00:00am every day
 
 // Refresh demand data snapshots
-openboxes.jobs.refreshDemandDataJob.enabled = true
+openboxes.jobs.refreshDemandDataJob.enabled = false
 openboxes.jobs.refreshDemandDataJob.cronExpression = "0 0 1 * * ?" // at 01:00:00am every day
 
 // Assign identifier job
@@ -1317,7 +1317,7 @@ openboxes.jobs.assignIdentifierJob.enabled = true
 openboxes.jobs.assignIdentifierJob.cronExpression = "0 * * * * ?" // every minute
 
 // Calculate current quantity on hand
-openboxes.jobs.calculateQuantityJob.enabled = true
+openboxes.jobs.calculateQuantityJob.enabled = false
 openboxes.jobs.calculateQuantityJob.cronExpression = "0 0 0/12 * * ?" // every twelve hours starting at midnight
 openboxes.jobs.calculateQuantityJob.enableOptimization = false
 
