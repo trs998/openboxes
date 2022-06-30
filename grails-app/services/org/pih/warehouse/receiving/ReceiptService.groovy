@@ -12,6 +12,7 @@ package org.pih.warehouse.receiving
 import grails.core.GrailsApplication
 import grails.gorm.transactions.Transactional
 import grails.validation.ValidationException
+import org.pih.warehouse.auth.AuthService
 import org.pih.warehouse.api.PartialReceipt
 import org.pih.warehouse.api.PartialReceiptContainer
 import org.pih.warehouse.api.PartialReceiptItem
@@ -23,6 +24,7 @@ import org.pih.warehouse.core.LocationType
 import org.pih.warehouse.inventory.InventoryItem
 import org.pih.warehouse.inventory.Transaction
 import org.pih.warehouse.inventory.TransactionEntry
+import org.pih.warehouse.inventory.RefreshProductAvailabilityEvent
 import org.pih.warehouse.inventory.TransactionType
 import org.pih.warehouse.shipping.Shipment
 import org.pih.warehouse.shipping.ShipmentItem
@@ -38,7 +40,6 @@ class ReceiptService {
     def locationService
     def identifierService
     GrailsApplication grailsApplication
-    def notificationService
     def productAvailabilityService
 
     @Transactional(readOnly=true)
@@ -72,10 +73,10 @@ class ReceiptService {
      * @return
      */
     PartialReceipt getPartialReceiptFromShipment(Shipment shipment) {
-
+        def currentUser = AuthService.currentUser.get()
         PartialReceipt partialReceipt = new PartialReceipt()
         partialReceipt.shipment = shipment
-        partialReceipt.recipient = shipment.recipient
+        partialReceipt.recipient = currentUser
         partialReceipt.dateShipped = shipment.actualShippingDate
         partialReceipt.dateDelivered = shipment.actualDeliveryDate ?: new Date()
 
@@ -211,11 +212,11 @@ class ReceiptService {
             inventoryItem.save(flush: true)
         }
 
-        if (partialReceiptItem.cancelRemaining) {
+        if (partialReceiptItem.cancelRemaining && ReceiptStatusCode.RECEIVED == receiptItem.receipt?.receiptStatusCode) {
             //when completing the pending receipt status was already changed to received and the item quantity will in quantityReceived,
             // so there is no need to subtract quantityReceiving, unless it's split item (which will always have quantity received = 0)
             Integer qtyCanceled = partialReceiptItem.quantityShipped - (partialReceiptItem.quantityReceived +
-                    partialReceiptItem.quantityCanceled + (partialReceiptItem.isSplitItem ? partialReceiptItem.quantityReceiving : 0))
+                    (partialReceiptItem.isSplitItem ? partialReceiptItem.quantityReceiving : 0))
             receiptItem.quantityCanceled = qtyCanceled
         }
 
@@ -224,8 +225,6 @@ class ReceiptService {
     }
 
     void savePartialReceipt(PartialReceipt partialReceipt, boolean completed) {
-
-        log.info "Saving partial receipt " + partialReceipt
 
         Shipment shipment = partialReceipt?.shipment
         Receipt receipt = partialReceipt?.receipt
@@ -251,7 +250,6 @@ class ReceiptService {
         // Add receipt items
         partialReceipt.partialReceiptItems.each { partialReceiptItem ->
 
-            log.info "Saving partial receipt item " + partialReceiptItem
             if (partialReceiptItem.shouldSave) {
                 ReceiptItem receiptItem = createOrUpdateReceiptItem(partialReceiptItem)
                 receipt.addToReceiptItems(receiptItem)
@@ -270,9 +268,17 @@ class ReceiptService {
                 // Create receipt, event, and transaction
                 savePartialReceipt(partialReceipt, true)
                 savePartialReceiptEvent(partialReceipt)
-                saveInboundTransaction(partialReceipt)
-                // Send notification email on completed receiving
-                notificationService.sendReceiptNotifications(partialReceipt)
+                Transaction transaction = createInboundTransaction(partialReceipt)
+
+                // Trigger shipment status transition event to handle email notifications
+                grailsApplication.mainContext.publishEvent(
+                        new ShipmentStatusTransitionEvent(partialReceipt, ShipmentStatusCode.RECEIVED))
+
+                // Trigger product availability refresh
+                transaction.disableRefresh = Boolean.FALSE
+                grailsApplication.mainContext.publishEvent(
+                        new RefreshProductAvailabilityEvent(transaction, transaction.associatedLocation, transaction.associatedProducts, false))
+
             } catch (Exception e) {
                 log.error "An unexpected error occurred during receipt: " + e.message, e
                 throw e;
@@ -362,7 +368,10 @@ class ReceiptService {
             creditTransaction.addToTransactionEntries(transactionEntry)
         }
 
-        if (creditTransaction.hasErrors() || !creditTransaction.save()) {
+        // FIXME Block the refresh of the product availability table (to be triggered at end of request)
+        creditTransaction.disableRefresh = Boolean.TRUE
+
+        if (creditTransaction.hasErrors() || !creditTransaction.save(flush:true)) {
             // did not save successfully, display errors message
             throw new ValidationException("Failed to receive shipment due to error while saving transaction", creditTransaction.errors)
         }

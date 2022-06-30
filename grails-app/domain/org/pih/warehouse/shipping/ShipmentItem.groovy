@@ -9,12 +9,14 @@
  **/
 package org.pih.warehouse.shipping
 
+import org.pih.warehouse.core.ActivityCode
 import org.pih.warehouse.receiving.ReceiptItem
 import org.pih.warehouse.receiving.ReceiptStatusCode
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.Person
 import org.pih.warehouse.donation.Donor
 import org.pih.warehouse.inventory.InventoryItem
+import org.pih.warehouse.inventory.LotStatusCode
 import org.pih.warehouse.order.OrderItem
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.receiving.Receipt
@@ -50,7 +52,8 @@ class ShipmentItem implements Comparable, Serializable {
     static hasMany = [orderItems: OrderItem, receiptItems: ReceiptItem]
 
     static transients = ["comments", "orderItemId", "quantityReceivedAndCanceled", "quantityCanceled", "quantityReceived", "quantityRemaining",
-                         "orderNumber", "orderName", "quantityRemainingToShip", "quantityPerUom"]
+                         "orderNumber", "orderId", "orderName", "quantityRemainingToShip", "quantityPerUom", "hasRecalledLot", "quantityPicked", "quantityPickedFromOrders",
+                         "unavailableQuantityPicked"]
 
     static mapping = {
         id generator: 'uuid'
@@ -95,6 +98,11 @@ class ShipmentItem implements Comparable, Serializable {
     String getOrderItemId() {
         def orderItemIds = orderItems?.collect { OrderItem orderItem -> orderItem.id }?.unique()
         return orderItemIds ? orderItemIds.first() : null
+    }
+
+    String getOrderId() {
+        def orderNumbers = orderItems?.collect { OrderItem orderItem -> orderItem.order.id }?.unique()
+        return orderNumbers ? orderNumbers.first() : ''
     }
 
     String getOrderNumber() {
@@ -185,6 +193,43 @@ class ShipmentItem implements Comparable, Serializable {
         return orderItem ? orderItem.quantityPerUom : 1
     }
 
+    Integer getQuantityPicked() {
+        Integer quantityPicked
+        if (binLocation) {
+            quantityPicked = requisitionItem?.picklistItems?.findAll { it.inventoryItem == inventoryItem && it.binLocation == binLocation }?.sum { it.quantity }
+        } else {
+            quantityPicked = requisitionItem?.picklistItems?.findAll { it.inventoryItem == inventoryItem }?.sum { it.quantity }
+        }
+        return quantityPicked?:quantity
+    }
+
+    // For requisition based shipments, to avoid qualifying recalled or on hold items into quantity picked validation
+    Integer getUnavailableQuantityPicked() {
+        Integer unavailableQuantityPicked
+        if (binLocation) {
+            unavailableQuantityPicked = requisitionItem?.picklistItems?.findAll {
+                it.inventoryItem == inventoryItem && it.binLocation == binLocation && (
+                    it.inventoryItem?.recalled || it.binLocation?.supports(ActivityCode.HOLD_STOCK)
+                )
+            }?.sum { it.quantity }
+        } else {
+            unavailableQuantityPicked = requisitionItem?.picklistItems?.findAll {
+                it.inventoryItem == inventoryItem && it.inventoryItem?.recalled
+            }?.sum { it.quantity }
+        }
+        return unavailableQuantityPicked?:0
+    }
+
+    Integer getQuantityPickedFromOrders() {
+        Integer quantityPicked
+        if (binLocation) {
+            quantityPicked = orderItems.collect { it.picklistItems?.findAll { it.inventoryItem == inventoryItem && it.binLocation == binLocation }?.sum { it.quantity } }.sum()
+        } else {
+            quantityPicked = orderItems.collect { it.picklistItems?.findAll { it.inventoryItem == inventoryItem }?.sum { it.quantity } }.sum()
+        }
+        return quantityPicked?:quantity
+    }
+
 
     String[] getComments() {
         def comments = []
@@ -192,6 +237,10 @@ class ShipmentItem implements Comparable, Serializable {
             comments = receiptItems?.comment?.findAll { it }
         }
         return comments
+    }
+
+    Boolean getHasRecalledLot() {
+        return inventoryItem?.lotStatus == LotStatusCode.RECALLED
     }
 
     /**

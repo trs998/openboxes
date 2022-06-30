@@ -11,6 +11,9 @@ package org.pih.warehouse.order
 
 import org.pih.warehouse.core.BudgetCode
 import org.pih.warehouse.core.GlAccount
+import org.pih.warehouse.invoice.InvoiceItem
+import org.pih.warehouse.invoice.InvoiceType
+import org.pih.warehouse.invoice.InvoiceTypeCode
 
 class OrderAdjustment implements Serializable {
 
@@ -32,7 +35,16 @@ class OrderAdjustment implements Serializable {
 
     Boolean canceled = Boolean.FALSE
 
-    static transients = ['totalAdjustments']
+    static transients = [
+        'totalAdjustments',
+        'postedPurchaseInvoiceItems',
+        'invoiceItems',
+        'isInvoiced',
+        "invoices",
+        "hasInvoices",
+        "hasPrepaymentInvoice",
+        "hasRegularInvoice",
+    ]
 
     static belongsTo = [order: Order, orderItem: OrderItem]
 
@@ -45,7 +57,7 @@ class OrderAdjustment implements Serializable {
         orderAdjustmentType(nullable:true)
         amount(nullable:true)
         percentage(nullable:true)
-        description(nullable:true)
+        description(nullable:false, blank: false)
         comments(nullable: true)
         budgetCode(nullable: true)
         glAccount(nullable: true)
@@ -55,5 +67,48 @@ class OrderAdjustment implements Serializable {
 
     def getTotalAdjustments() {
         return amount ?: percentage ? orderItem ? orderItem?.subtotal * (percentage/100) : order.subtotal * (percentage/100) : 0
+    }
+
+    def getInvoiceItems() {
+        return InvoiceItem.executeQuery("""
+          SELECT ii
+            FROM InvoiceItem ii
+            JOIN ii.invoice i
+            JOIN ii.orderAdjustments oa
+            WHERE oa.id = :id 
+          """, [id: id])
+    }
+
+    def getPostedPurchaseInvoiceItems() {
+        return InvoiceItem.executeQuery("""
+          SELECT ii
+            FROM InvoiceItem ii
+            JOIN ii.invoice i
+            JOIN i.invoiceType it
+            JOIN ii.orderAdjustments oa
+            WHERE oa.id = :id 
+            AND i.datePosted IS NOT NULL
+            AND it.code = :purchaseInvoiceCode
+          """, [id: id, purchaseInvoiceCode: InvoiceTypeCode.INVOICE])
+    }
+
+    Boolean getIsInvoiced() {
+        return !postedPurchaseInvoiceItems.empty
+    }
+
+    def getInvoices() {
+        return invoiceItems*.invoice.unique()
+    }
+
+    Boolean getHasInvoices() {
+        return !invoices.empty
+    }
+
+    Boolean getHasPrepaymentInvoice() {
+        return invoices.any { it.invoiceType?.code == InvoiceTypeCode.PREPAYMENT_INVOICE }
+    }
+
+    Boolean getHasRegularInvoice() {
+        return invoices.any { it.invoiceType == null || it.invoiceType?.code == InvoiceTypeCode.INVOICE }
     }
 }

@@ -47,3 +47,4 @@ grails-app/assets/images/*.ttf
 docker/mysql
 docker/openboxes.war
 .gradle
+.~*#

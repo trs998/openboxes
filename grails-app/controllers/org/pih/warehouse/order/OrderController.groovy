@@ -9,6 +9,7 @@
  **/
 package org.pih.warehouse.order
 
+import fr.opensagres.xdocreport.converter.ConverterTypeTo
 import grails.converters.JSON
 import grails.plugins.csv.CSVWriter
 import grails.validation.ValidationException
@@ -16,6 +17,7 @@ import grails.gorm.transactions.Transactional
 import org.apache.commons.lang.StringEscapeUtils
 import org.pih.warehouse.api.StockMovement
 import org.pih.warehouse.core.UomService
+import org.pih.warehouse.core.ActivityCode
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.product.ProductSupplier
 import org.pih.warehouse.shipping.Shipment
@@ -27,7 +29,15 @@ import org.pih.warehouse.core.Document
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.Organization
 import org.pih.warehouse.core.User
+import org.pih.warehouse.core.ValidationCode
+import org.pih.warehouse.importer.CSVUtils
+import org.pih.warehouse.product.Product
+import org.pih.warehouse.product.ProductSupplier
+import org.pih.warehouse.shipping.Shipment
+import org.pih.warehouse.shipping.ShipmentItem
 import org.springframework.web.multipart.MultipartFile
+
+import java.math.RoundingMode
 
 @Transactional
 class OrderController {
@@ -35,9 +45,10 @@ class OrderController {
     def stockMovementService
     def reportService
     def shipmentService
-    UomService uomService
+    def uomService
     def userService
     def productSupplierDataService
+    def documentTemplateService
 
     static allowedMethods = [save: "POST", update: "POST"]
 
@@ -46,80 +57,146 @@ class OrderController {
     }
 
     def list(OrderCommand command) {
+        Location currentLocation = Location.get(session.warehouse.id)
+        Boolean isCentralPurchasingEnabled = currentLocation.supports(ActivityCode.ENABLE_CENTRAL_PURCHASING)
 
         // Parse date parameters
         Date statusStartDate = params.statusStartDate ? Date.parse("MM/dd/yyyy", params.statusStartDate) : null
         Date statusEndDate = params.statusEndDate ? Date.parse("MM/dd/yyyy", params.statusEndDate) : null
 
         // Set default values
-        params.destination = params.destination == null ? session?.warehouse?.id : params.destination
-        params.orderTypeCode = params.orderTypeCode ? Enum.valueOf(OrderTypeCode.class, params.orderTypeCode) : OrderTypeCode.PURCHASE_ORDER
+        params.destination = params.destination == null && !isCentralPurchasingEnabled ? session?.warehouse?.id : params.destination
+
+        OrderType orderType = params.orderType ? OrderType.findByIdOrCode(params.orderType, params.orderType) : OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name())
+
         params.status = params.status ? Enum.valueOf(OrderStatus.class, params.status) : null
+        params.destinationParty = isCentralPurchasingEnabled ? currentLocation?.organization?.id : params.destinationParty
 
         // Pagination parameters
-        params.max = params.format ? null : params.max?:10
-        params.offset = params.format ? null : params.offset?:0
+        params.max = (params.format || params.downloadOrders) ? null : params.max?:10
+        params.offset = (params.format || params.downloadOrders) ? null : params.offset?:0
 
         def orderTemplate = new Order(params)
+        orderTemplate.orderType = orderType
+
         def orders = orderService.getOrders(orderTemplate, statusStartDate, statusEndDate, params)
 
         if (params.format && orders) {
 
-            def sw = new StringWriter()
-            def csv = new CSVWriter(sw, {
-                "Supplier organization" { it.supplierOrganization }
-                "Supplier location" { it.supplierLocation }
-                "PO Number" { it.number }
-                "PO Description" { it.description }
-                "PO Status" { it.status }
-                "Code" { it.code }
-                "Product" { it.productName }
-                "Item Status" {it.itemStatus}
-                "Source Code" { it.sourceCode }
-                "Supplier Code" { it.supplierCode }
-                "Manufacturer" { it.manufacturer }
-                "Manufacturer Code" { it.manufacturerCode }
-                "Unit of Measure" { it.unitOfMeasure }
-                "Quantity Ordered" { it.quantityOrdered }
-                "Quantity Shipped" { it.quantityShipped}
-                "Quantity Received" { it.quantityReceived}
-                "Unit Price" { it.unitPrice}
-                "Total Cost" { it.totalCost}
-                "Recipient" { it.recipient}
-                "Estimated Ready Date" { it.estimatedReadyDate}
-                "Actual Ready Date" { it.actualReadyDate}
-                "Budget Code" { it.budgetCode }
-            })
+            def csv = CSVUtils.getCSVPrinter()
+            csv.printRecord(
+                    "Supplier organization",
+                    "Supplier location",
+                    "Destination",
+                    "PO Number",
+                    "PO Description",
+                    "PO Status",
+                    "Code",
+                    "Product",
+                    "Item Status",
+                    "Source Code",
+                    "Supplier Code",
+                    "Manufacturer",
+                    "Manufacturer Code",
+                    "Unit of Measure",
+                    "Qty per UOM",
+                    "Quantity Ordered",
+                    "Quantity Shipped",
+                    "Quantity Received",
+                    "Quantity Invoiced",
+                    "Unit Price",
+                    "Total Cost",
+                    "Currency",
+                    "Recipient",
+                    "Estimated Ready Date",
+                    "Actual Ready Date",
+                    "Budget Code"
+            )
 
             orders*.orderItems*.each { orderItem ->
-                csv << [
-                        supplierOrganization: orderItem?.order?.origin?.organization?.name,
-                        supplierLocation: orderItem?.order?.origin?.name,
-                        number       : orderItem?.order?.orderNumber,
-                        description       : orderItem?.order?.name ?: '',
-                        status       : orderItem?.order?.displayStatus,
-                        code       : orderItem?.product?.productCode,
-                        productName       : orderItem?.product?.name,
-                        itemStatus        : orderItem?.orderItemStatusCode.name(),
-                        sourceCode       : orderItem?.productSupplier?.code ?: '',
-                        supplierCode       : orderItem?.productSupplier?.supplierCode ?: '',
-                        manufacturer       : orderItem?.productSupplier?.manufacturer?.name ?: '',
-                        manufacturerCode       : orderItem?.productSupplier?.manufacturerCode ?: '',
-                        unitOfMeasure: orderItem.unitOfMeasure ?: '',
-                        quantityOrdered: orderItem.quantity,
-                        quantityShipped: orderItem.quantityShipped,
-                        quantityReceived: orderItem.quantityReceived,
-                        unitPrice:  orderItem.unitPrice ?: '',
-                        totalCost: orderItem.total ?: '',
-                        recipient: orderItem.recipient ?: '',
-                        estimatedReadyDate: orderItem.estimatedReadyDate?.format("MM/dd/yyyy") ?: '',
-                        actualReadyDate: orderItem.actualReadyDate?.format("MM/dd/yyyy") ?: '',
-                        budgetCode: orderItem.budgetCode?.code ?: '',
-                ]
+                csv.printRecord(
+                        orderItem?.order?.origin?.organization?.code + " - " + orderItem?.order?.origin?.organization?.name,
+                        orderItem?.order?.origin?.name,
+                        orderItem?.order?.destination?.name,
+                        orderItem?.order?.orderNumber,
+                        orderItem?.order?.name,
+                        orderItem?.order?.displayStatus,
+                        orderItem?.product?.productCode,
+                        orderItem?.product?.name,
+                        OrderItemStatusCode.CANCELED == orderItem?.orderItemStatusCode ? orderItem?.orderItemStatusCode?.name() : '',
+                        orderItem?.productSupplier?.code,
+                        orderItem?.productSupplier?.supplierCode,
+                        orderItem?.productSupplier?.manufacturer?.name,
+                        orderItem?.productSupplier?.manufacturerCode,
+                        orderItem?.quantityUom?.code,
+                        orderItem?.quantityPerUom,
+                        orderItem?.quantity,
+                        orderItem?.quantityShipped,
+                        orderItem?.quantityReceived,
+                        orderItem?.quantityInvoicedInStandardUom,
+                        orderItem?.unitPrice,
+                        orderItem?.total,
+                        orderItem?.order?.currencyCode,
+                        orderItem?.recipient,
+                        orderItem?.estimatedReadyDate?.format("MM/dd/yyyy"),
+                        orderItem?.actualReadyDate?.format("MM/dd/yyyy"),
+                        orderItem?.budgetCode?.code,
+                )
+            }
+
+            response.setHeader("Content-disposition", "attachment; filename=\"OrdersLineItems-${new Date().format("MM/dd/yyyy")}.csv\"")
+            render(contentType: "text/csv", text: csv.out.toString())
+        }
+
+        if (params.downloadOrders && orders) {
+            def csv = CSVUtils.getCSVPrinter()
+            csv.printRecord(
+                    "Status",
+                    "PO Number",
+                    "Name",
+                    "Supplier",
+                    "Destination name",
+                    "Ordered by",
+                    "Ordered on",
+                    "Payment method",
+                    "Payment terms",
+                    "Line items",
+                    "Ordered",
+                    "Shipped",
+                    "Received",
+                    "Invoiced",
+                    "Currency code",
+                    "Total Amount (Local Currency)",
+                    "Total Amount (Default Currency)"
+            )
+
+            orders.each { order ->
+                Integer lineItemsSize = order?.orderItems?.findAll { it.orderItemStatusCode != OrderItemStatusCode.CANCELED }.size() ?: 0
+                BigDecimal totalPrice = new BigDecimal(order?.total).setScale(2, RoundingMode.HALF_UP)
+                BigDecimal totalPriceNormalized = order?.totalNormalized.setScale(2, RoundingMode.HALF_UP)
+                csv.printRecord(
+                        order?.displayStatus,
+                        order?.orderNumber,
+                        order?.name,
+                        "${order?.origin?.name} (${order?.origin?.organization?.code})",
+                        "${order?.destination?.name} (${order?.destination?.organization?.code})",
+                        order?.orderedBy?.name,
+                        order?.dateOrdered?.format("MM/dd/yyyy"),
+                        order?.paymentMethodType?.name,
+                        order?.paymentTerm?.name,
+                        lineItemsSize,
+                        order?.orderedOrderItems?.size() ?: 0,
+                        order?.shippedOrderItems?.size() ?: 0,
+                        order?.receivedOrderItems?.size() ?: 0,
+                        order?.invoiceItems?.size() ?: 0,
+                        order?.currencyCode ?: grailsApplication.config.openboxes.locale.defaultCurrencyCode,
+                        "${totalPrice} ${order?.currencyCode ?: grailsApplication.config.openboxes.locale.defaultCurrencyCode}",
+                        "${totalPriceNormalized} ${grailsApplication.config.openboxes.locale.defaultCurrencyCode}",
+                )
             }
 
             response.setHeader("Content-disposition", "attachment; filename=\"Orders-${new Date().format("MM/dd/yyyy")}.csv\"")
-            render(contentType: "text/csv", text: sw.toString(), encoding: "UTF-8")
+            render(contentType: "text/csv", text: csv.out.toString())
             return
         }
 
@@ -132,7 +209,8 @@ class OrderController {
                 statusStartDate: statusStartDate,
                 statusEndDate  : statusEndDate,
                 totalPrice     : totalPrice,
-                orderTypeCode  : orderTemplate?.orderTypeCode
+                orderType      : orderTemplate?.orderType,
+                isCentralPurchasingEnabled : isCentralPurchasingEnabled
         ]
     }
 
@@ -149,7 +227,7 @@ class OrderController {
         def orderInstance = new Order(params)
         if (orderInstance.save(flush: true)) {
             flash.message = "${warehouse.message(code: 'default.created.message', args: [warehouse.message(code: 'order.label', default: 'Order'), orderInstance.id])}"
-            redirect(action: "list", id: orderInstance.id)
+            redirect(action: "list", id: orderInstance.id, params: [orderType: orderInstance.orderType])
         } else {
             render(view: "create", model: [orderInstance: orderInstance])
         }
@@ -207,7 +285,7 @@ class OrderController {
             orderInstance.properties = params
             if (!orderInstance.hasErrors() && orderInstance.save(flush: true)) {
                 flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'order.label', default: 'Order'), orderInstance.id])}"
-                redirect(action: "list", id: orderInstance.id)
+                redirect(action: "list", id: orderInstance.id, params: [orderType: orderInstance.orderType])
             } else {
                 render(view: "edit", model: [orderInstance: orderInstance])
             }
@@ -221,18 +299,23 @@ class OrderController {
     def remove() {
         def orderInstance = Order.get(params.id)
         if (orderInstance) {
+            if (orderInstance.hasPrepaymentInvoice) {
+                flash.message = "${warehouse.message(code: 'order.errors.deletePrepaid.message')}"
+                redirect(action: "show", id: orderInstance?.id)
+                return
+            }
             try {
                 orderService.deleteOrder(orderInstance)
                 flash.message = "${warehouse.message(code: 'default.deleted.message', args: [warehouse.message(code: 'order.label', default: 'Order'), orderInstance.orderNumber])}"
-                redirect(action: "list")
+                redirect(action: "list", params: [orderType: orderInstance.orderType])
             }
             catch (org.springframework.dao.DataIntegrityViolationException e) {
                 flash.message = "${warehouse.message(code: 'default.not.deleted.message', args: [warehouse.message(code: 'order.label', default: 'Order'), orderInstance.orderNumber])}"
-                redirect(action: "list", id: params.id)
+                redirect(action: "list", id: params.id, params: [orderType: orderInstance.orderType])
             }
         } else {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
-            redirect(action: "list")
+            redirect(action: "list", params: [orderType: orderInstance.orderType])
         }
     }
 
@@ -248,6 +331,8 @@ class OrderController {
 
     def editAdjustment() {
         def orderInstance = Order.get(params?.order?.id)
+        def currentLocation = Location.get(session.warehouse.id)
+        def isAccountingRequired = currentLocation?.isAccountingRequired()
         if (!orderInstance) {
                 log.info "order not found"
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
@@ -259,14 +344,15 @@ class OrderController {
                 flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'comment.label', default: 'Comment'), commentInstance.id])}"
                 redirect(action: "show", id: orderInstance?.id)
             }
-            render(view: "editAdjustment", model: [orderInstance: orderInstance, orderAdjustment: orderAdjustment])
+            render(view: "editAdjustment", model: [orderInstance: orderInstance, orderAdjustment: orderAdjustment, isAccountingRequired: isAccountingRequired])
         }
     }
 
     def saveAdjustment() {
         def orderInstance = Order.get(params?.order?.id)
+        def currentLocation = Location.get(session?.warehouse.id)
         if (orderInstance) {
-            if (orderInstance.destination.isAccountingRequired()) {
+            if (currentLocation.isAccountingRequired()) {
                 OrderAdjustmentType orderAdjustmentType = OrderAdjustmentType.get(params.orderAdjustmentType.id)
                 if (!orderAdjustmentType.glAccount) {
                     render(status: 500, text: "${warehouse.message(code: 'orderAdjustment.missingGlAccount.label')}")
@@ -278,11 +364,14 @@ class OrderController {
                 params.budgetCode = BudgetCode.get(params.budgetCode)
             }
             if (orderAdjustment) {
+                if (orderAdjustment.hasRegularInvoice) {
+                    throw new UnsupportedOperationException("${warehouse.message(code: 'errors.noPermissions.label')}")
+                }
                 if (orderAdjustment.orderItem && !params.orderItem.id) {
                     orderAdjustment.orderItem.removeFromOrderAdjustments(orderAdjustment)
                 }
                 orderAdjustment.properties = params
-                if (!orderAdjustment.hasErrors() && orderAdjustment.save(flush: true)) {
+                if (orderAdjustment.save(flush: true)) {
                     flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'orderAdjustment.label', default: 'Order Adjustment'), orderAdjustment.id])}"
                     redirect(controller:"purchaseOrder", action: "addItems", id: orderInstance.id, params:['skipTo': 'adjustments'])
                 } else {
@@ -291,7 +380,7 @@ class OrderController {
             } else {
                 orderAdjustment = new OrderAdjustment(params)
                 orderInstance.addToOrderAdjustments(orderAdjustment)
-                if (!orderInstance.hasErrors() && orderInstance.save(flush: true)) {
+                if (orderInstance.save(flush: true)) {
                     flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'order.label', default: 'Order'), orderInstance.id])}"
                     redirect(controller:"purchaseOrder", action: "addItems", id: orderInstance.id, params:['skipTo': 'adjustments'])
                 } else {
@@ -306,32 +395,19 @@ class OrderController {
     }
 
     def deleteAdjustment() {
-        def orderInstance = Order.get(params.order.id)
-        if (!orderInstance) {
-            flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.order.id])}"
-            redirect(action: "list")
-        } else {
-            User user = User.get(session?.user?.id)
-            def canEdit = orderService.canManageAdjustments(orderInstance, user)
-            if(canEdit) {
-                def orderAdjustment = OrderAdjustment.get(params?.id)
-                if (!orderAdjustment) {
-                    flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'orderAdjustment.label', default: 'Order Adjustment'), params.id])}"
-                    redirect(action: "show", id: orderInstance?.id)
-                } else {
-                    orderInstance.removeFromOrderAdjustments(orderAdjustment)
-                    orderAdjustment.delete()
-                    if (!orderInstance.hasErrors() && orderInstance.save(flush: true)) {
-                        flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'order.label', default: 'Order'), orderInstance.id])}"
-                        redirect(controller:"purchaseOrder", action: "addItems", id: orderInstance.id, params:['skipTo': 'adjustments'])
-                    } else {
-                        render(view: "show", model: [orderInstance: orderInstance])
-                    }
-                }
-            } else {
-                throw new UnsupportedOperationException("${warehouse.message(code: 'errors.noPermissions.label')}")
-            }
+        User user = User.get(session?.user?.id)
+
+        OrderAdjustment orderAdjustment = OrderAdjustment.get(params?.id)
+        if (!orderAdjustment) {
+            flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'orderAdjustment.label', default: 'Order Adjustment'), params.id])}"
+            redirect(action: "show", id: params.order.id)
         }
+
+        orderService.deleteAdjustment(orderAdjustment, user)
+
+        flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.order.id])}"
+        redirect(controller:"purchaseOrder", action: "addItems", id: params.order.id, params:['skipTo': 'adjustments'])
+
     }
 
 
@@ -527,46 +603,53 @@ class OrderController {
             redirect(action: "list")
 
         } else {
-
             def date = new Date()
             response.setHeader("Content-disposition", "attachment; filename=\"${orderInstance?.orderNumber?.encodeAsHTML()}-${date.format("MM-dd-yyyy")}.csv\"")
             response.contentType = "text/csv"
-            def csv = "PO Number,${orderInstance?.orderNumber}\n" +
-                    "Description,${StringEscapeUtils.escapeCsv(orderInstance?.name)}\n" +
-                    "Vendor,${StringEscapeUtils.escapeCsv(orderInstance?.origin.name)}\n" +
-                    "Ship to,${orderInstance?.destination?.name}\n" +
-                    "Ordered by,${orderInstance?.orderedBy?.name} ${orderInstance?.orderedBy?.email}\n" +
-                    "\n"
 
-            csv += "${warehouse.message(code: 'product.productCode.label')}," +
-                    "${warehouse.message(code: 'product.name.label')}," +
-                    "${warehouse.message(code: 'product.vendorCode.label')}," +
-                    "${warehouse.message(code: 'orderItem.quantity.label')}," +
-                    "${warehouse.message(code: 'product.unitOfMeasure.label')}," +
-                    "${warehouse.message(code: 'orderItem.unitPrice.label')}," +
-                    "${warehouse.message(code: 'orderItem.totalPrice.label')}," +
-                    "${warehouse.message(code: 'orderItem.budgetCode.label')}" +
-                    "\n"
+            def csv = CSVUtils.getCSVPrinter()
+            csv.printRecord("PO Number", orderInstance?.orderNumber)
+            csv.printRecord("Description", orderInstance?.name)
+            csv.printRecord("Vendor", orderInstance?.origin.name)
+            csv.printRecord("Ship to", orderInstance?.destination?.name)
+            csv.printRecord("Ordered by", "${orderInstance?.orderedBy?.name} ${orderInstance?.orderedBy?.email}")
+            csv.println()  // print a newline between text (above) and column headers (immediately following)
+            csv.printRecord(
+                warehouse.message(code: 'product.productCode.label'),
+                warehouse.message(code: 'product.name.label'),
+                warehouse.message(code: 'product.supplierCode.label'),
+                warehouse.message(code: 'product.manufacturerCode.label'),
+                warehouse.message(code: 'orderItem.quantity.label'),
+                warehouse.message(code: 'product.unitOfMeasure.label'),
+                warehouse.message(code: 'orderItem.unitPrice.label'),
+                warehouse.message(code: 'orderItem.totalPrice.label'),
+                warehouse.message(code: 'orderItem.budgetCode.label')
+            )
 
             def totalPrice = 0.0
 
+            String lastCurrencyCode = null
             orderInstance?.listOrderItems()?.each { orderItem ->
                 totalPrice += orderItem.totalPrice() ?: 0
+                if (orderItem?.currencyCode != null) {
+                    lastCurrencyCode = orderItem?.currencyCode
+                }
 
-                String quantityString = formatNumber(number: orderItem?.quantity, maxFractionDigits: 1, minFractionDigits: 1)
-                String unitPriceString = formatNumber(number: orderItem?.unitPrice, maxFractionDigits: 4, minFractionDigits: 2)
-                String totalPriceString = formatNumber(number: orderItem?.totalPrice(), maxFractionDigits: 2, minFractionDigits: 2)
-
-                csv += "${orderItem?.product?.productCode}," +
-                        "${StringEscapeUtils.escapeCsv(orderItem?.product?.name)}," +
-                        "${orderItem?.product?.vendorCode ?: ''}," +
-                        "${StringEscapeUtils.escapeCsv(quantityString)}," +
-                        "${orderItem?.unitOfMeasure}," +
-                        "${StringEscapeUtils.escapeCsv(unitPriceString)}," +
-                        "${StringEscapeUtils.escapeCsv(totalPriceString)}," +
-                        "${orderItem?.budgetCode?.code}," +
-                        "\n"
+                csv.printRecord(
+                    orderItem?.product?.productCode,
+                    orderItem?.product?.name,
+                    orderItem?.productSupplier?.supplierCode,
+                    orderItem?.productSupplier?.manufacturerCode,
+                    CSVUtils.formatInteger(number: orderItem?.quantity),
+                    CSVUtils.formatUnitOfMeasure(orderItem?.quantityUom?.code, orderItem?.quantityPerUom),
+                    CSVUtils.formatCurrency(number: orderItem?.unitPrice, currencyCode: orderItem?.currencyCode, isUnitPrice: true),
+                    CSVUtils.formatCurrency(number: orderItem?.totalPrice(), currencyCode: orderItem?.currencyCode),
+                    orderItem?.budgetCode?.code
+                )
             }
+
+            csv.printRecord(null, null, null, null, null, null, null, CSVUtils.formatCurrency(number: totalPrice, currencyCode: lastCurrencyCode), null)
+            render(contentType: "text/csv", text: csv.out.toString())
 
             String totalPriceString = formatNumber(number: totalPrice, maxFractionDigits: 2, minFractionDigits: 2)
             csv += ",,,,,,${StringEscapeUtils.escapeCsv(totalPriceString)}\n"
@@ -577,10 +660,13 @@ class OrderController {
 
     def orderItemFormDialog() {
         OrderItem orderItem = OrderItem.get(params.id)
+        def currentLocation = Location.get(session.warehouse.id)
+        def isAccountingRequired = currentLocation?.isAccountingRequired()
         if (!orderService.canOrderItemBeEdited(orderItem, session.user)) {
             throw new UnsupportedOperationException("${warehouse.message(code: 'errors.noPermissions.label')}")
         }
-        render(template: "orderItemFormDialog", model: [orderItem:orderItem, canEdit: orderService.canOrderItemBeEdited(orderItem, session.user)])
+        render(template: "orderItemFormDialog",
+                model: [orderItem:orderItem, canEdit: orderService.canOrderItemBeEdited(orderItem, session.user), isAccountingRequired: isAccountingRequired])
     }
 
     def productSourceFormDialog = {
@@ -606,27 +692,30 @@ class OrderController {
         render (status: 200, text: productSupplier.id)
     }
 
+    def removeOrderItem = {
+        User user = User.get(session?.user?.id)
+
     def removeOrderItem() {
         OrderItem orderItem = OrderItem.get(params.id)
-        if (orderItem) {
-            if (orderItem.hasShipmentAssociated() || !orderService.canOrderItemBeEdited(orderItem, session.user)) {
-                throw new UnsupportedOperationException("${warehouse.message(code: 'errors.noPermissions.label')}")
-            }
-            Order order = orderItem.order
-            order.removeFromOrderItems(orderItem)
-            orderItem.delete()
-            order.save(flush:true)
-            render (status: 200, text: "Successfully deleted order item")
-        }
-        else {
+        if (!orderItem) {
             render (status: 404, text: "Unable to locate order item")
         }
+
+        orderService.removeOrderItem(orderItem, user)
+
+        render (status: 200, text: "Successfully deleted order item")
     }
 
     def saveOrderItem() {
         Order order = Order.get(params.order.id)
         OrderItem orderItem = OrderItem.get(params.orderItem.id)
         ProductSupplier productSupplier = null
+        ValidationCode validationCode = params.validationCode ? params.validationCode as ValidationCode : null
+        Location currentLocation = Location.get(session?.warehouse.id)
+        if (validationCode == ValidationCode.BLOCK) {
+            render(status: 500, text: "${warehouse.message(code: 'orderItem.blockedSupplier.label')}")
+            return
+        }
         if (params.productSupplier == "Create New") {
             Organization supplier = Organization.get(params.supplier.id)
             productSupplier = ProductSupplier.findByCodeAndSupplier(params.sourceCode, supplier)
@@ -636,13 +725,13 @@ class OrderController {
             }
         }
         if (params.productSupplier || params.supplierCode) {
-            productSupplier = productSupplierDataService.getOrCreateNew(params)
+            productSupplier = productSupplierDataService.getOrCreateNew(params, params.productSupplier == "Create New")
         }
         params.remove("productSupplier")
         if (params.budgetCode) {
             params.budgetCode = BudgetCode.get(params.budgetCode)
         }
-        if (order.destination.isAccountingRequired()) {
+        if (currentLocation.isAccountingRequired()) {
             Product product = Product.get(params.product.id)
             if (!product.glAccount) {
                 render(status: 500, text: "${warehouse.message(code: 'orderItem.missingGlAccount.label')}")
@@ -658,13 +747,7 @@ class OrderController {
                 throw new UnsupportedOperationException("${warehouse.message(code: 'errors.noPermissions.label')}")
             }
             orderItem.properties = params
-            Shipment pendingShipment = order.pendingShipment
-            if (pendingShipment) {
-                Set<ShipmentItem> itemsToUpdate = pendingShipment.shipmentItems.findAll { it.orderItemId == orderItem.id }
-                itemsToUpdate.each { itemToUpdate ->
-                    itemToUpdate.recipient = orderItem.recipient
-                }
-            }
+            orderItem.refreshPendingShipmentItemRecipients()
         }
 
         if (productSupplier != null) {
@@ -690,23 +773,18 @@ class OrderController {
     def getOrderItems() {
         def orderInstance = Order.get(params.id)
         def orderItems = orderInstance.orderItems.collect {
-
-            String quantityUom = "${it?.quantityUom?.code?:g.message(code:'default.ea.label')?.toUpperCase()}"
-            String quantityPerUom = "${g.formatNumber(number: it?.quantityPerUom?:1, maxFractionDigits: 0)}"
-            String unitOfMeasure = "${quantityUom}/${quantityPerUom}"
-
             [
                     id: it.id,
                     product: it.product,
                     quantity: it.quantity,
-                    quantityUom: quantityUom,
-                    quantityPerUom: quantityPerUom,
-                    unitOfMeasure: unitOfMeasure,
+                    quantityUom: it?.quantityUom?.code,
+                    quantityPerUom: it?.quantityPerUom,
+                    unitOfMeasure: it?.unitOfMeasure,
                     totalQuantity: (it?.quantity?:1) * (it?.quantityPerUom?:1),
                     productPackage: it?.productPackage,
                     currencyCode: it?.order?.currencyCode,
-                    unitPrice:  g.formatNumber(number: it.unitPrice),
-                    totalPrice: g.formatNumber(number: it.totalPrice()),
+                    unitPrice: CSVUtils.formatCurrency(number: it.unitPrice, currencyCode: it.currencyCode, isUnitPrice: true),
+                    totalPrice: CSVUtils.formatCurrency(number: it.totalPrice(), currencyCode: it.currencyCode),
                     estimatedReadyDate: g.formatDate(date: it.estimatedReadyDate, format: Constants.DEFAULT_DATE_FORMAT),
                     actualReadyDate: g.formatDate(date: it.actualReadyDate, format: Constants.DEFAULT_DATE_FORMAT),
                     productSupplier: it.productSupplier,
@@ -736,58 +814,56 @@ class OrderController {
             def date = new Date()
             response.setHeader("Content-disposition", "attachment; filename=\"${orderInstance.orderNumber}-${date.format("MM-dd-yyyy")}.csv\"")
             response.contentType = "text/csv"
-            def csv = ""
 
-            csv += "${warehouse.message(code: 'orderItem.id.label')}," + // code
-                    "${warehouse.message(code: 'product.productCode.label')}," + // Product
-                    "${warehouse.message(code: 'product.name.label')}," + // Product
-                    "${warehouse.message(code: 'product.sourceCode.label')}," + // source Code
-                    "${warehouse.message(code: 'product.sourceName.label')}," + // source name
-                    "${warehouse.message(code: 'product.supplierCode.label')}," + // supplier code
-                    "${warehouse.message(code: 'product.manufacturer.label')}," + // manufacturer
-                    "${warehouse.message(code: 'product.manufacturerCode.label')}," + // manufacturer code
-                    "${warehouse.message(code: 'default.quantity.label')}," + // qty
-                    "${warehouse.message(code: 'default.unitOfMeasure.label')}," + // UoM
-                    "${warehouse.message(code: 'default.cost.label')}," + // unit price
-                    "${warehouse.message(code: 'orderItem.totalCost.label')}," + // total cost
-                    "${warehouse.message(code: 'order.recipient.label')}," + // recipient
-                    "${warehouse.message(code: 'orderItem.estimatedReadyDate.label')}," + // estimated ready date
-                    "${warehouse.message(code: 'orderItem.budgetCode.label')}," +
-                    "\n"
+            def csv = CSVUtils.getCSVPrinter()
+            csv.printRecord(
+                    warehouse.message(code: 'orderItem.id.label'),
+                    warehouse.message(code: 'product.productCode.label'),
+                    warehouse.message(code: 'product.name.label'),
+                    warehouse.message(code: 'product.sourceCode.label'),
+                    warehouse.message(code: 'product.sourceName.label'),
+                    warehouse.message(code: 'product.supplierCode.label'),
+                    warehouse.message(code: 'product.manufacturer.label'),
+                    warehouse.message(code: 'product.manufacturerCode.label'),
+                    warehouse.message(code: 'default.quantity.label'),
+                    warehouse.message(code: 'default.unitOfMeasure.label'),
+                    warehouse.message(code: 'default.cost.label'),
+                    warehouse.message(code: 'orderItem.totalCost.label'),
+                    warehouse.message(code: 'order.recipient.label'),
+                    warehouse.message(code: 'orderItem.estimatedReadyDate.label'),
+                    warehouse.message(code: 'orderItem.actualReadyDate.label'),
+                    warehouse.message(code: 'orderItem.budgetCode.label')
+            )
 
             def totalPrice = 0.0
 
             orderInstance?.listOrderItems()?.each { orderItem ->
-                totalPrice += orderItem.totalPrice() ?: 0
-
-                String quantityString = formatNumber(number: orderItem?.quantity, maxFractionDigits: 1, minFractionDigits: 1)
-                String unitPriceString = formatNumber(number: orderItem?.unitPrice, maxFractionDigits: 4, minFractionDigits: 2)
-                String totalPriceString = formatNumber(number: orderItem?.totalPrice(), maxFractionDigits: 2, minFractionDigits: 2)
-                String unitOfMeasure = orderItem?.quantityUom ? "${orderItem?.quantityUom?.name}/${orderItem?.quantityPerUom}" : orderItem?.unitOfMeasure
-
-                csv += "${orderItem?.id}," +
-                        "${orderItem?.product?.productCode}," +
-                        "${StringEscapeUtils.escapeCsv(orderItem?.product?.name)}," +
-                        "${orderItem?.productSupplier?.code ?: ''}," +
-                        "${StringEscapeUtils.escapeCsv(orderItem?.productSupplier?.name)}," +
-                        "${orderItem?.productSupplier?.supplierCode ?: ''}," +
-                        "${orderItem?.productSupplier?.manufacturer?.name ?: ''}," +
-                        "${orderItem?.productSupplier?.manufacturerCode ?: ''}," +
-                        "${StringEscapeUtils.escapeCsv(quantityString)}," +
-                        "${unitOfMeasure}," +
-                        "${StringEscapeUtils.escapeCsv(unitPriceString)}," +
-                        "${StringEscapeUtils.escapeCsv(totalPriceString)}," +
-                        "${orderItem?.recipient?.name ?: ''}," +
-                        "${orderItem?.estimatedReadyDate?.format("MM/dd/yyyy") ?: ''}," +
-                        "${orderItem?.budgetCode?.code ?: ''}," +
-                        "\n"
+                csv.printRecord(
+                        orderItem?.id,
+                        orderItem?.product?.productCode,
+                        orderItem?.product?.name,
+                        orderItem?.productSupplier?.code,
+                        orderItem?.productSupplier?.name,
+                        orderItem?.productSupplier?.supplierCode,
+                        orderItem?.productSupplier?.manufacturer?.name,
+                        orderItem?.productSupplier?.manufacturerCode,
+                        CSVUtils.formatInteger(number: orderItem?.quantity),
+                        orderItem?.unitOfMeasure,
+                        CSVUtils.formatCurrency(number: orderItem?.unitPrice, currencyCode: orderItem?.currencyCode, isUnitPrice: true),
+                        CSVUtils.formatCurrency(number: orderItem?.totalPrice(), currencyCode: orderItem?.currencyCode),
+                        orderItem?.recipient?.name,
+                        orderItem?.estimatedReadyDate?.format("MM/dd/yyyy"),
+                        orderItem?.actualReadyDate?.format("MM/dd/yyyy"),
+                        orderItem?.budgetCode?.code
+                )
             }
-            render csv
+            render(contentType: "text/csv", text: csv.out.toString())
         }
     }
 
     def importOrderItems() {
         def orderInstance = Order.get(params.id)
+        Location currentLocation = Location.get(session?.warehouse?.id)
         if (!orderInstance) {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
             redirect(action: "list")
@@ -803,7 +879,7 @@ class OrderController {
                 List lineItems = orderService.parseOrderItems(multipartFile.inputStream.text)
                 log.info "Line items: " + lineItems
 
-                if (orderService.importOrderItems(params.id, params.supplierId, lineItems)) {
+                if (orderService.importOrderItems(params.id, params.supplierId, lineItems, currentLocation)) {
                     flash.message = "Successfully imported ${lineItems?.size()} order line items. "
                 } else {
                     flash.message = "Failed to import packing list items due to an unknown error."
@@ -835,10 +911,14 @@ class OrderController {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
             redirect(action: "list")
         } else {
-            return [orderInstance: orderInstance]
+            Document documentTemplate = Document.findByName("${controllerName}:${actionName}")
+            if (documentTemplate) {
+                render documentTemplateService.renderGroovyServerPageDocumentTemplate(documentTemplate, [orderInstance:orderInstance])
+                return
+            }
+            [orderInstance: orderInstance]
         }
     }
-
 
     def renderPdf() {
         def orderInstance = Order.get(params.id)
@@ -846,33 +926,43 @@ class OrderController {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'order.label', default: 'Order'), params.id])}"
             redirect(action: "list")
         } else {
+            if (!params?.documentTemplate?.id) {
+                throw new IllegalArgumentException("documentTemplate.id is required")
+            }
+            Document documentTemplate = Document.get(params?.documentTemplate?.id)
+            if (documentTemplate) {
 
-            def baseUri = request.scheme + "://" + request.serverName + ":" + request.serverPort
+                try {
+                    ByteArrayOutputStream outputStream = new ByteArrayOutputStream()
 
-            // JSESSIONID is required because otherwise the login page is rendered
-            def url = baseUri + params.url + ";jsessionid=" + session.getId()
-            url += "?print=true"
-            url += "&location.id=" + params.location.id
-            url += "&category.id=" + params.category.id
-            url += "&startDate=" + params.startDate
-            url += "&endDate=" + params.endDate
-            url += "&showTransferBreakdown=" + params.showTransferBreakdown
-            url += "&hideInactiveProducts=" + params.hideInactiveProducts
-            url += "&insertPageBreakBetweenCategories=" + params.insertPageBreakBetweenCategories
-            url += "&includeChildren=" + params.includeChildren
-            url += "&includeEntities=true"
+                    // Set response headers appropriately
+                    if (targetDocumentType) {
 
-            // Let the browser know what content type to expect
-            response.setContentType("application/pdf")
+                        // Use the appropriate content type and extension of the conversion type
+                        // (except XHTML, just render as HTML response)
+                        if (targetDocumentType != ConverterTypeTo.XHTML) {
+                            response.setHeader("Content-disposition",
+                                    "attachment; filename=\"${documentTemplate.name}\"-${orderInstance.orderNumber}.${targetDocumentType.extension}");
+                            response.setContentType(targetDocumentType.mimeType)
+                        }
+                    }
+                    else {
 
-            // Render pdf to the response output stream
-            log.info "BaseUri is $baseUri"
-            log.info("Session ID: " + session.id)
-            log.info "Fetching url $url"
-            reportService.generatePdf(url, response.getOutputStream())
-
-
+                        // Otherwise write processed document to response using the original
+                        // document template's extension and content type
+                        response.setHeader("Content-disposition",
+                                "attachment; filename=\"${documentTemplate.name}\"-${orderInstance.orderNumber}.${documentTemplate.extension}");
+                        response.setContentType(documentTemplate.contentType)
+                    }
+                    outputStream.writeTo(response.outputStream)
+                    return
+                } catch (Exception e) {
+                    log.error("Unable to render document template ${documentTemplate.name} for order ${orderInstance?.id}", e)
+                    throw e;
+                }
+            }
         }
+        [orderInstance:orderInstance]
     }
 
 
@@ -898,7 +988,7 @@ class OrderController {
             response.setHeader("Content-disposition",
                     "attachment; filename=\"PO - ${order.id} - shipment import template.csv\"")
             response.contentType = "text/csv"
-            render csv
+            render(contentType: "text/csv", text: csv)
         } else {
             render(text: 'No order items found', status: 404)
         }
@@ -934,7 +1024,7 @@ class OrderController {
     def cancelOrderAdjustment() {
         OrderAdjustment orderAdjustment = OrderAdjustment.get(params.id)
         User user = User.get(session?.user?.id)
-        def canEdit = orderService.canManageAdjustments(orderAdjustment.order, user)
+        def canEdit = orderService.canManageAdjustments(orderAdjustment.order, user) && !orderAdjustment.hasRegularInvoice
         if(canEdit) {
             orderAdjustment.canceled = true
             render (status: 200, text: "Adjustment canceled successfully")
@@ -982,8 +1072,36 @@ class OrderController {
 
     def createCombinedShipment() {
         def orderInstance = Order.get(params.orderId)
+        if (!orderInstance.orderItems.find {it.quantityRemainingToShip != 0 && it.orderItemStatusCode != OrderItemStatusCode.CANCELED }) {
+            flash.message = "${warehouse.message(code:'purchaseOrder.noItemsToShip.label')}"
+            redirect(controller: 'order', action: "show", id: orderInstance.id, params: ['tab': 4])
+            return
+        }
         StockMovement stockMovement = StockMovement.createFromOrder(orderInstance);
         stockMovement = stockMovementService.createShipmentBasedStockMovement(stockMovement)
         redirect(controller: 'stockMovement', action: "createCombinedShipments", params: [direction: 'INBOUND', id: stockMovement.id])
+    }
+
+    def orderSummary = {
+        params.max = params.max?:10
+        params.offset = params.offset?:0
+        def orderSummaryList = orderService.getOrderSummaryList(params)
+        render(view: "orderSummaryList", model: [orderSummaryList: orderSummaryList ?: []], params: params)
+    }
+
+    // For testing order item derived status feature. orderItemSummary action gets the data from extended SQL view
+    def orderItemSummary = {
+        params.max = params.max?:10
+        params.offset = params.offset?:0
+        def orderItemSummaryList = orderService.getOrderItemSummaryList(params)
+        render(view: "orderItemSummaryList", model: [orderItemSummaryList: orderItemSummaryList ?: [], actionName: "orderItemSummary"], params: params)
+    }
+
+    // For testing order item derived status feature. orderItemDetails action gets the data from simplified SQL view
+    def orderItemDetails = {
+        params.max = params.max?:10
+        params.offset = params.offset?:0
+        def orderItemDetailsList = orderService.getOrderItemDetailsList(params)
+        render(view: "orderItemSummaryList", model: [orderItemSummaryList: orderItemDetailsList ?: []], actionName: "orderItemDetails", params: params)
     }
 }

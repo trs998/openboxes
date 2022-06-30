@@ -30,6 +30,9 @@ class ProductAvailability {
     // Quantities
     Integer quantityOnHand
     Integer quantityAllocated
+    Integer quantityOnHold
+    Integer quantityAvailableToPromise
+    Integer quantityNotPicked
 
     // Auditing
     Date dateCreated
@@ -37,7 +40,10 @@ class ProductAvailability {
 
     static mapping = {
         id generator: "assigned"
+        quantityNotPicked formula: "quantity_on_hand - quantity_allocated"
     }
+
+    static transients = ["pickable", "recalled"]
 
     static constraints = {
         product(nullable:false)
@@ -46,5 +52,12 @@ class ProductAvailability {
         inventoryItem(nullable:false)
         quantityOnHand(nullable:false)
         quantityAllocated(nullable: true)
+        quantityOnHold(nullable: true)
+        quantityAvailableToPromise(nullable: true)
+        quantityNotPicked(nullable: true)
+    }
+
+    Boolean isPickable() {
+        return (inventoryItem ? inventoryItem.pickable : true) && (binLocation ? binLocation.pickable : true)
     }
 }

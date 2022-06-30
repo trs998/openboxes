@@ -1,21 +1,23 @@
 import React, { Component } from 'react';
-import PropTypes from 'prop-types';
-import { connect } from 'react-redux';
-import _ from 'lodash';
-import update from 'immutability-helper';
-import { getTranslate } from 'react-localize-redux';
 
-import ModalWrapper from '../../form-elements/ModalWrapper';
-import LabelField from '../../form-elements/LabelField';
-import Select from '../../../utils/Select';
-import ArrayField from '../../form-elements/ArrayField';
-import TextField from '../../form-elements/TextField';
-import Checkbox from '../../../utils/Checkbox';
-import apiClient from '../../../utils/apiClient';
-import { showSpinner, hideSpinner } from '../../../actions';
-import { debounceProductsInOrders } from '../../../utils/option-utils';
-import renderHandlingIcons from '../../../utils/product-handling-icons';
-import { translateWithDefaultMessage } from '../../../utils/Translate';
+import update from 'immutability-helper';
+import _ from 'lodash';
+import PropTypes from 'prop-types';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+
+import { hideSpinner, showSpinner } from 'actions';
+import ArrayField from 'components/form-elements/ArrayField';
+import LabelField from 'components/form-elements/LabelField';
+import ModalWrapper from 'components/form-elements/ModalWrapper';
+import TextField from 'components/form-elements/TextField';
+import apiClient from 'utils/apiClient';
+import Checkbox from 'utils/Checkbox';
+import { debounceProductsInOrders } from 'utils/option-utils';
+import renderHandlingIcons from 'utils/product-handling-icons';
+import Select from 'utils/Select';
+import { translateWithDefaultMessage } from 'utils/Translate';
+
 
 const FIELDS = {
   orderItems: {
@@ -25,8 +27,20 @@ const FIELDS = {
     fields: {
       checked: {
         fieldKey: '',
-        label: '',
-        flexWidth: '3',
+        label: 'react.stockMovement.selectAll.label',
+        defaultMessage: 'Select All',
+        flexWidth: '0.4',
+        headerAlign: 'right',
+        getDynamicAttr: ({ selectAllItems, allItemsSelected }) => ({
+          headerHtml: () => (
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={allItemsSelected}
+              onClick={selectAllItems}
+            />
+          ),
+        }),
         type: ({
           // eslint-disable-next-line react/prop-types
           rowIndex, fieldValue, selectRow,
@@ -34,7 +48,7 @@ const FIELDS = {
           <Checkbox
             id={rowIndex.toString()}
             disabled={false}
-            className="ml-4"
+            style={{ marginLeft: '1.1rem' }}
             value={fieldValue.checked}
             onChange={value => selectRow(value, rowIndex)}
           />
@@ -44,37 +58,65 @@ const FIELDS = {
         type: LabelField,
         label: 'react.stockMovement.orderNumber.label',
         defaultMessage: 'PO Number',
+        flexWidth: '1',
+        fieldKey: '',
+        getDynamicAttr: ({
+          fieldValue,
+        }) => ({
+          url: fieldValue && fieldValue.orderId ? `/openboxes/order/show/${fieldValue.orderId}` : '',
+        }),
+        attributes: {
+          formatValue: fieldValue => fieldValue && fieldValue.orderNumber,
+        },
       },
       productCode: {
         type: LabelField,
         label: 'react.stockMovement.productCode.label',
         defaultMessage: 'Product Code',
+        flexWidth: '1',
       },
       productName: {
         type: LabelField,
         label: 'react.stockMovement.productName.label',
         defaultMessage: 'Product name',
+        flexWidth: '3',
+        attributes: {
+          className: 'text-left ml-1',
+          showValueTooltip: true,
+        },
+      },
+      supplierCode: {
+        type: LabelField,
+        label: 'react.stockMovement.supplierCode.label',
+        defaultMessage: 'Supplier code',
+        flexWidth: '1',
       },
       budgetCode: {
         type: LabelField,
         label: 'react.stockMovement.budgetCode.label',
         defaultMessage: 'Budget Code',
+        flexWidth: '1',
       },
       recipient: {
         type: LabelField,
         label: 'react.stockMovement.recipient.label',
         defaultMessage: 'Recipient',
+        flexWidth: '1.5',
+        attributes: {
+          showValueTooltip: true,
+        },
       },
       quantityAvailable: {
         type: LabelField,
         label: 'react.stockMovement.quantityAvailable.label',
         defaultMessage: 'Quantity Available',
+        flexWidth: '1',
       },
       quantityToShip: {
         type: TextField,
         label: 'react.stockMovement.quantityToShip.label',
         defaultMessage: 'Quantity to Ship',
-        fixedWidth: '140px',
+        flexWidth: '1',
         attributes: {
           type: 'number',
         },
@@ -88,6 +130,7 @@ const FIELDS = {
         type: LabelField,
         label: 'react.stockMovement.uom.label',
         defaultMessage: 'UoM',
+        flexWidth: '1',
       },
     },
   },
@@ -130,6 +173,8 @@ class CombinedShipmentItemsModal extends Component {
     this.onSave = this.onSave.bind(this);
     this.selectRow = this.selectRow.bind(this);
     this.updateRow = this.updateRow.bind(this);
+    this.selectAllItems = this.selectAllItems.bind(this);
+    this.allItemsSelected = this.allItemsSelected.bind(this);
 
     this.debounceProductsInOrders = debounceProductsInOrders(
       this.props.debounceTime,
@@ -152,7 +197,6 @@ class CombinedShipmentItemsModal extends Component {
     this.props.showSpinner();
     const { shipment } = this.props;
     const { selectedOrderItems } = this.state;
-
     const payload = {
       itemsToAdd: _.map(selectedOrderItems, (item, key) => ({
         orderItemId: key,
@@ -201,7 +245,7 @@ class CombinedShipmentItemsModal extends Component {
     const { vendor, destination } = this.props;
     const url = '/api/combinedShipmentItems/findOrderItems';
     const payload = {
-      orderIds: selectedOrders, productId: selectedProductId, vendor, destination,
+      orderIds: _.map(selectedOrders, o => o.id), productId: selectedProductId, vendor, destination,
     };
     return apiClient.post(url, payload).then(resp => this.setState({
       formValues: {
@@ -268,6 +312,42 @@ class CombinedShipmentItemsModal extends Component {
     });
   }
 
+  allItemsSelected() {
+    return this.state.formValues.orderItems.every(item => item.checked);
+  }
+
+  selectAllItems() {
+    const allItemsSelected = this.allItemsSelected();
+    this.setState({
+      formValues: {
+        orderItems: this.state.formValues.orderItems.map(item => ({
+          ...item,
+          checked: !allItemsSelected,
+          quantityToShip: !allItemsSelected ? item.quantityAvailable : '',
+          sortOrder: !allItemsSelected ? item.sortOrder : '',
+        })),
+      },
+    }, () => this.updateAllSelectedItems());
+  }
+
+  updateAllSelectedItems() {
+    const allItemsSelected = this.allItemsSelected();
+    const updatedSelectedOrderItems = this.state.formValues.orderItems.reduce((acc, curr) => {
+      if (allItemsSelected) {
+        return {
+          ...acc,
+          [curr.orderItemId]: {
+            quantityToShip: curr.quantityAvailable,
+            sortOrder: curr.sortOrder,
+          },
+        };
+      }
+      return acc;
+    }, {});
+
+    this.setState({ selectedOrderItems: updatedSelectedOrderItems });
+  }
+
   render() {
     const {
       orderNumberOptions, selectedOrders, formValues,
@@ -288,6 +368,8 @@ class CombinedShipmentItemsModal extends Component {
         formProps={{
           selectRow: this.selectRow,
           updateRow: this.updateRow,
+          selectAllItems: this.selectAllItems,
+          allItemsSelected: this.allItemsSelected(),
         }}
         btnSaveText="react.combinedShipments.addItemsToShipment.label"
         btnSaveDefaultText="Add items to shipment"
@@ -305,6 +387,8 @@ class CombinedShipmentItemsModal extends Component {
             options={orderNumberOptions}
             showValueTooltip
             onChange={value => this.setSelectedOrders(value)}
+            valueKey="id"
+            labelKey="orderNumber"
             classes=""
             cache={false}
           />
@@ -322,10 +406,10 @@ class CombinedShipmentItemsModal extends Component {
             filterOption={options => options}
             cache={false}
             optionRenderer={option => (
-              <strong style={{ color: option.color ? option.color : 'black' }} className="d-flex align-items-center">
+              <strong style={{ color: option.color || 'black' }} className="d-flex align-items-center">
                 {option.label}
                 &nbsp;
-                {renderHandlingIcons(option.value ? option.value.handlingIcons : [])}
+                {renderHandlingIcons(option.handlingIcons)}
               </strong>
             )}
             valueRenderer={option => (

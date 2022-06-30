@@ -1054,6 +1054,23 @@ button.action-btn, button.previous, button.next {
     padding: 5px;
     text-decoration: none;
 }
+.actions .download-subbuttons button {
+    all: unset;
+    display: block;
+    padding: 5px;
+    font-weight: normal;
+    color: #666;
+    font-size: 0.9em;
+    font: 11px "lucida grande", verdana, arial, helvetica, sans-serif;
+    line-height: 12px;
+    text-align: left;
+}
+
+.actions .download-subbuttons:hover {
+    display: block;
+    background-color: lightgrey;
+    text-decoration: none;
+}
 
 /* Flow Header */
 .currentState { font-weight: bold; background-color: #eee; color: blue; }
@@ -2196,17 +2213,24 @@ img.photo_tiny {
 
 }
 
+.banner-menu,
+.banner-menu button,
+.banner-menu input {
+    height: 30px;
+}
+
 /* Image in Text Box */
-.globalSearch {
+.globalSearch,
+.globalSearch[type=text] {
     vertical-align: middle;
     background:#FFFFFF url(../images/icons/silk/magnifier.png) no-repeat 5px 5px;
     padding:4px 4px 4px 24px;
-    border:1px solid #CCCCCC;
     font-size: 16px;
-    border: 1px solid #ccc;
-    -moz-border-radius: 4px;
-    -webkit-border-radius: 4px;
-    border-radius: 4px;
+    border: 1px solid #d4d4d4;
+    /* visually match `button`'s 11px/0.2em border radius */
+    -moz-border-radius: 0.1375em;
+    -webkit-border-radius: 0.1375em;
+    border-radius: 0.1375em;
     width: 400px;
 }
 
@@ -2634,6 +2658,7 @@ span.canceled, div.canceled {
     background-color: #3c8dde;
     background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#599bdc), to(#3072b3));
     background-image: -moz-linear-gradient(#599bdc, #3072b3);
+    background-image: -ms-linear-gradient(#599bdc, #3072b3);
     background-image: -o-linear-gradient(#599bdc, #3072b3);
     background-image: linear-gradient(#599bdc, #3072b3);
 }
@@ -2871,6 +2896,79 @@ span.canceled, div.canceled {
     background-image: linear-gradient(#b33630, #dc5f59);
 }
 
+.button.helpscout {
+    /* base color is "PIH Teal" (#3AB4B1), with adjustments in HSL */
+
+    /* button gradient runs +/- 5% L from the base color */
+    background-color: #3AB4B1;
+    background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#46C3C0), to(#34A29F));
+    background-image: -moz-linear-gradient(#46C3C0, #34A29F);
+    background-image: -ms-linear-gradient(#46C3C0, #34A29F);
+    background-image: -o-linear-gradient(#46C3C0, #34A29F);
+    background-image: linear-gradient(#46C3C0, #34A29F);
+
+    /* border colors are 10/15% darker */
+    border-color: #2E8F8C;
+    border-bottom-color: #287B79;
+    border-right-color: #287B79;
+
+    box-sizing: border-box;
+    color: #F3FBFB; /* 50% lighter than base color */
+    height: 30px;
+    text-decoration: none;
+    text-shadow: 1px 1px 0 #287B79; /* same as border-bottom-color */
+}
+
+.button.helpscout i {
+    filter: drop-shadow(1px 1px 0 #287B79); /* apply button's text-shadow to fontawesome */
+}
+
+.button.helpscout:focus,
+.button.helpscout:hover {
+    /* make button 10% darker on mouseover */
+    background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#34A29F), to(#287B79));
+    background-image: -moz-linear-gradient(#34A29F, #287B79);
+    background-image: -ms-linear-gradient(#34A29F, #287B79);
+    background-image: -o-linear-gradient(#34A29F, #287B79);
+    background-image: linear-gradient(#34A29F, #287B79);
+    border-color: #287B79;
+    border-bottom-color: #226866;
+    border-right-color: #226866;
+    color: #E0F5F5;
+    text-shadow: 1px 1px 0 #226866; /* same as border-bottom-color */
+}
+
+.button.helpscout:focus i,
+.button.helpscout:hover i {
+    filter: drop-shadow(1px 1px 0 #226866); /* apply button's text-shadow to fontawesome */
+}
+
+.button.helpscout:active,
+.button.helpscout.active {
+    /* invert and darken button when pressed */
+    background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#287B79), to(#34A29F));
+    background-image: -moz-linear-gradient(#287B79, #34A29F);
+    background-image: -ms-linear-gradient(#287B79, #34A29F);
+    background-image: -o-linear-gradient(#287B79, #34A29F);
+    background-image: linear-gradient(#287B79, #34A29F);
+    border-color: #287B79;
+    border-top-color: #226866;
+    border-left-color: #226866;
+    color: #E0F5F5;
+    text-shadow: -1px -1px 0 #226866; /* same as border-bottom-color */
+}
+
+.button.helpscout:active i,
+.button.helpscout.active i {
+    filter: drop-shadow(-1px -1px 0 #226866); /* apply button's text-shadow to fontawesome */
+}
+
+/* HelpScout's default positioning wastes space and clobbers page content */
+.BeaconContainer {
+    bottom: 5px !important;
+    right: 5px !important;
+}
+
 /* Pill button
    ========================================================================== */
 
@@ -2895,6 +2993,8 @@ span.canceled, div.canceled {
 .button.big.icon:before {
     top: 0;
 }
+
+.button.block { width: 100%; }
 
 
 /* =============================================================================
@@ -3134,9 +3234,78 @@ table.pvtTable tr th { background-color: #ddd; }
 
 /* Hack to allow Chosen results to display correctly in jQuery dialogs  */
 .ui-dialog .ui-dialog-content { overflow:visible !important; padding: 0; }
-.ui-dialog { overflow: inherit !important; }
+.ui-dialog { overflow: inherit !important; padding: 0; }
 
 
 .blurred {
     filter: blur(6px);
+}
+
+.tabs-left {
+    position: relative;
+    padding-left: 35%;
+    overflow: auto;
+    display: flex;
+}
+.tabs-left .ui-tabs-nav {
+    position: absolute;
+    left: 0.25em;
+    top: 0.25em;
+    width: 33%;
+    padding: 0.2em 0 0.5em 0.5em;
+    background-color: #888;
+}
+.tabs-left .ui-tabs-nav li {
+    right: 1px;
+    width: 100%;
+    border-right: none;
+    border-bottom-width: 1px !important;
+    -moz-border-radius: 4px 0px 0px 4px;
+    -webkit-border-radius: 4px 0px 0px 4px;
+    border-radius: 4px 0px 0px 4px;
+    overflow: hidden;
+    margin: 2px 0px 2px 0px;
+}
+.tabs-left .ui-tabs-nav li.ui-tabs-selected,
+.tabs-left .ui-tabs-nav li.ui-state-active {
+    border-right: 1px solid transparent;
+    background-color: #ffffff;
+    border-color: white;
+}
+.tabs-left .ui-tabs-nav li a {
+    float: left;
+    width: 100%;
+    text-align: left;
+    color: black;
+}
+.tabs-left .ui-tabs-panel {
+    height: 400px;
+    width: 100%;
+}
+.organization-group {
+    height: 400px;
+}
+.header-border {
+    margin-bottom: 15px;
+    margin-top: 10px;
+    border: 1px solid #888;
+    border-radius: 4px;
+    display: inline-block;
+}
+.header-border .heading {
+    margin-left: 20px;
+    margin-top: -10px;
+}
+.header-border .heading > span {
+    background-color: white;
+}
+.element {
+    margin: 5px;
+    display: inline-block;
+    padding: 0.5em 1em;
+    border: 1px solid #d4d4d4;
+    text-align: center;
+    color: black !important;
+    background-clip: padding-box;
+    border-radius: 0.2em;
 }

@@ -9,6 +9,7 @@
  **/
 package org.pih.warehouse.core
 
+import org.codehaus.groovy.grails.commons.ApplicationHolder
 
 /**
  * A document is a file (e.g. document, image) that can be associated with an
@@ -26,7 +27,7 @@ class Document implements Serializable {
     Date dateCreated        // The date the document was created
     Date lastUpdated        // The date the document was last updated
 
-    URI fileUri            // Universal Resource Identifier
+    String fileUri            // Universal Resource Identifier
     String documentNumber        // Document reference number
     DocumentType documentType    // Type of document
 
@@ -37,7 +38,7 @@ class Document implements Serializable {
         cache true
     }
 
-    static transients = ["size", "image"]
+    static transients = ["size", "image", 'link']
 
     static constraints = {
         name(nullable: true, maxSize: 255)
@@ -45,7 +46,7 @@ class Document implements Serializable {
         fileContents(nullable: true)
         extension(nullable: true, maxSize: 255)
         contentType(nullable: true, maxSize: 255)
-        fileUri(nullable: true)
+        fileUri(uri: true, nullable: true)
         fileContents(nullable: true, maxSize: 10485760) // 10 MBs
         documentNumber(nullable: true, maxSize: 255)
         documentType(nullable: true)
@@ -68,6 +69,10 @@ class Document implements Serializable {
         return documentTypes ? Document.findAllByDocumentTypeInList(documentTypes) : []
     }
 
+    def getLink() {
+        def g = ApplicationHolder.application.mainContext.getBean('org.codehaus.groovy.grails.plugins.web.taglib.ApplicationTagLib')
+        return fileUri ?: g.createLink(controller: 'document', action: "download", id: id, absolute: true)
+
     static namedQueries = {
         listAllByDocumentCode { DocumentCode documentCode ->
             documentType {
@@ -76,5 +81,17 @@ class Document implements Serializable {
         }
     }
 
+    Map toJson() {
+        return [
+                id          : id,
+                name        : name,
+                link        : link,
+                fileUri     : fileUri,
+                filename    : filename,
+                documentType: documentType,
+                size        : size,
+                lastUpdated : lastUpdated,
+        ]
+    }
 
 }

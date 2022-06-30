@@ -1,6 +1,10 @@
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
+
 import PropTypes from 'prop-types';
+import { connect } from 'react-redux';
+
+import { debounceGlobalSearch } from 'utils/option-utils';
+import Select from 'utils/Select';
 
 import Select from '../utils/Select';
 import { debounceGlobalSearch } from '../utils/option-utils';

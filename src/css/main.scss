@@ -11,12 +11,17 @@ $gray-eta: #EEE;
 $red-alpha: #843534;
 $red-beta: #a94442;
 $red-gamma: #ce8483;
+$red-delta: #ffcccc;
 
 $blue-alpha: #163038;
 $blue-beta: #0c769e;
 $blue-gamma: #3bafda;
 $blue-delta: #4fc1e9;
 $blue-epsilon: #bce7f7;
+
+$black-alpha: #212529;
+
+$orange-alpha: #fca714;
 
 body {
   overflow-x: hidden;
@@ -257,6 +262,14 @@ body {
   }
 }
 
+.btn-link {
+  color: #757575;
+
+  &:hover {
+    color: #007bff;
+  }
+}
+
 .btn-xs {
   padding: 0 .5rem;
   font-size: .875rem;
@@ -280,19 +293,47 @@ body {
 .select-xs {
   font-size: .875rem;
   border-radius: .2rem;
+  height: 26px;
 
-  .Select-control {
-    height: 26px;
+  .react-select__control {
+    height: inherit;
+    min-height: 26px !important;
 
-    .Select-value {
-      line-height: 26px !important;
+    &.react-select__control--is-focused {
+      border-color: #007eff;
+      box-shadow: inset 0 1px 1px rgba(0,0,0,.075), 0 0 0 3px rgba(0,126,255,.1);
     }
 
-    .Select-placeholder {
-      line-height: 26px;
+    &.react-select__control--menu-is-open {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      border-color: #b3b3b3 #cccccc #d9d9d9 !important;
+      box-shadow: none;
     }
 
-    .Select-input {
+    .react-select__value-container, .react-select__indicators {
+      display: flex;
+      align-items: center;
+      height: inherit;
+
+      div {
+        margin: 0;
+        padding: 0;
+      }
+
+      .react-select__indicator {
+        padding-right: 5px !important;
+        cursor: pointer;
+      }
+
+      .react-select__single-value {
+        height: fit-content;
+      }
+    }
+
+    .react-select__input {
+      display: flex !important;
+      align-items: center;
       height: 24px;
 
       input {
@@ -301,6 +342,76 @@ body {
       }
     }
   }
+
+  .react-select__menu {
+    background-color: white;
+    z-index: 9999;
+  }
+}
+
+.multi-select {
+  height: auto !important;
+
+  .react-select__control {
+    .react-select__value-container, .react-select__indicators {
+      div {
+        margin: 2px;
+        padding: 2px 0;
+      }
+    }
+  }
+}
+
+.select-sm {
+  font-size: .875rem;
+  border-radius: .2rem;
+
+  .react-select__control {
+    height: 32px;
+
+    .react-select__value-container {
+      line-height: 32px !important;
+    }
+
+    .react-select__indicators {
+      line-height: 32px;
+
+      .react-select__indicator {
+        padding: 0 !important;
+        cursor: pointer;
+      }
+      .react-select__indicator:last-child {
+        padding-right: 5px !important;
+      }
+    }
+
+    .react-select__input {
+      height: 30px;
+
+      input {
+        padding: 0;
+        line-height: 32px;
+      }
+    }
+  }
+}
+
+.custom-option {
+  .react-select__menu-list {
+    padding: 0;
+
+    .react-select__menu-notice {
+      text-align: left;
+    }
+  }
+}
+
+.add-new-button {
+  padding: 8px 12px;
+  cursor: pointer;
+  text-align: right;
+  background-color: #DEEBFF;
+  color: #4f87ce;
 }
 
 .table-xs th,
@@ -311,13 +422,14 @@ body {
 
 .movement-number {
   height: auto;
-  margin-bottom: 20px;
   line-height: 36px;
   list-style: none;
   font-size: 25px;
   color: $blue-alpha;
   text-align: center;
   overflow-wrap: break-word;
+  margin-top: 10px;
+  padding: 15px 15px;
 
   .shipment-status {
     border: 1px solid #a5d24a;
@@ -341,13 +453,17 @@ body {
   color: red;
 }
 
+.has-control-error {
+  background-color: $red-gamma !important;
+}
+
 .has-error .help-block,
 .has-error .col-form-label {
   color: $red-beta;
 }
 
 .has-error .form-control,
-.has-error .Select-control {
+.has-error .react-select__control {
   border: 2px solid $red-beta;
   -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, .075);
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, .075);
@@ -616,8 +732,30 @@ tr.crossed-out td:before {
   background-color: $white-alpha;
 }
 
+.recalled {
+  background-color: $red-delta;
+}
+
+.on-hold {
+  background-color: $orange-alpha;
+}
+
+.recalled-and-on-hold {
+  background: repeating-linear-gradient(
+    135deg,
+    $orange-alpha,
+    $orange-alpha 10px,
+    $red-delta 10px,
+    $red-delta 20px
+  );;
+}
+
 .table-row {
   height: 28px;
+}
+
+.table-row.text-disabled {
+  background-color: #ddd9d9;
 }
 
 .table-inner-row {
@@ -639,7 +777,7 @@ div.crossed-out .table-inner-row:before {
   z-index: 9999 !important;
 }
 
-.Select-loading-zone {
+.react-select__loading-zone {
   display: none !important;
 }
 
@@ -822,6 +960,25 @@ div.crossed-out .table-inner-row:before {
   max-height: 60vh;
 }
 
+/* MODAL PAGE
+----------------------------*/
+.modal-page {
+  background-color: #888888;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  &__content {
+    background-color: #ffffff;
+    width: clamp(500px, 60vw, 850px);
+    display: flex;
+    flex-direction: column;
+    padding: 1rem 3rem;
+  }
+}
+
+
 /* LOGIN MODAL
 ----------------------------*/
 
@@ -866,4 +1023,35 @@ div.crossed-out .table-inner-row:before {
   > div {
     width: 100%;
   }
+}
+
+.negative-value {
+  background-color: $red-delta !important;
+}
+
+.returns-date-picker {
+  > div {
+    > .react-datepicker-wrapper {
+      width: 100%;
+      > div {
+        width: 100%;
+      }
+    }
+  }
+}
+
+.file-field {
+  height: 3em;
+  display: flex;
+  align-items: center;
+
+  input[type=file] {
+    width: 0;
+  }
+}
+
+.arrayfield-header-required::after {
+  margin-left: .25rem;
+  content: "*";
+  color: red;
 }

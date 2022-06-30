@@ -16,8 +16,7 @@
                     <format:product product="${orderItem.product}"/>
                     <g:hiddenField id="dlgProduct" name="product.id" value="${orderItem?.product?.id}"/>
                     <g:hiddenField id="dlgSupplierId" name="supplier.id" value="${orderItem?.order?.originParty?.id }"></g:hiddenField>
-                    <g:hiddenField id="isAccountingRequired" name="isAccountingRequired"
-                                   value="${orderItem?.order?.destination?.isAccountingRequired()}">
+                    <g:hiddenField id="isAccountingRequired" name="isAccountingRequired" value="${isAccountingRequired}">
                     </g:hiddenField>
                 </td>
             </tr>
@@ -173,8 +172,7 @@
                     <format:product product="${orderItem.product}"/>
                     <g:hiddenField id="dlgProduct" name="product.id" value="${orderItem?.product?.id}"/>
                     <g:hiddenField id="dlgSupplierId" name="supplier.id" value="${orderItem?.order?.originParty?.id }"></g:hiddenField>
-                    <g:hiddenField id="isAccountingRequired" name="isAccountingRequired"
-                                   value="${orderItem?.order?.destination?.isAccountingRequired()}">
+                    <g:hiddenField id="isAccountingRequired" name="isAccountingRequired" value="${isAccountingRequired}">
                     </g:hiddenField>
                 </td>
             </tr>
@@ -258,10 +256,18 @@
                 <td valign="top" class="name">
                     <label for="dlgUnitPrice"><warehouse:message code="orderItem.unitPrice.label"/></label>
                 </td>
-                <td valign="top" class="value">
-                    <g:formatNumber number="${orderItem?.unitPrice?:0.0 }"/>
-                    ${orderItem?.order?.currencyCode?:grailsApplication.config.openboxes.locale.defaultCurrencyCode}
-                </td>
+                <g:if test="${orderItem.hasRegularInvoice}">
+                    <td valign="top" class="value">
+                        <g:formatNumber number="${orderItem?.unitPrice?:0.0 }"/>
+                        ${orderItem?.order?.currencyCode?:grailsApplication.config.openboxes.locale.defaultCurrencyCode}
+                    </td>
+                </g:if>
+                <g:else>
+                    <td valign="top" class="value">
+                        <input type="text" id="dlgUnitPrice" name="unitPrice" value="${orderItem.unitPrice}" size="10" class="text" />
+                        <span class="fade"><warehouse:message code="order.unitPrice.hint"/></span>
+                    </td>
+                </g:else>
             </tr>
             <tr class="prop">
                 <td valign="top" class="name">
@@ -307,7 +313,8 @@
                                         id="dlgBudgetCode"
                                         value="${orderItem.budgetCode?.id}"
                                         class="select2"
-                                        noSelection="['':'']"/>
+                                        noSelection="['':'']"
+                                        disabled="${orderItem.hasRegularInvoice}"/>
                 </td>
             </tr>
         </g:elseif>

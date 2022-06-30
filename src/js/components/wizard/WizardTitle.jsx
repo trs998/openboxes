@@ -1,18 +1,42 @@
 import React from 'react';
+
+import _ from 'lodash';
 import PropTypes from 'prop-types';
 
-const WizardTitle = props => (
-  <div className="panel-heading movement-number">
-    {props.title.length ? (<span>{props.title}</span>) : null}
-    {props.additionalTitle}
-  </div>
-);
+
+const WizardTitle = (props) => {
+  if (!props.title && !props.additionalTitle) {
+    return null;
+  }
+
+  return (
+    <div className="panel-heading movement-number">
+      {props.title ?
+        (
+          <div>
+            {
+              _.map(props.title, element => (
+                <span style={{ color: element.color }}>
+                  {element.text}
+                  <span style={{ color: 'black' }}>
+                    {element.delimeter}
+                  </span>
+                </span>
+              ))
+            }
+          </div>
+        )
+      : null}
+      {props.additionalTitle}
+    </div>
+  );
+};
 
 export default WizardTitle;
 
 WizardTitle.propTypes = {
   /** Array of steps names */
-  title: PropTypes.string.isRequired,
+  title: PropTypes.arrayOf(PropTypes.shape({})).isRequired,
   additionalTitle: PropTypes.oneOf([PropTypes.string, PropTypes.func]),
 };
 

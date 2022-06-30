@@ -1,14 +1,33 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import { Form } from 'react-final-form';
+
+import axios from 'axios';
 import arrayMutators from 'final-form-arrays';
-import PropTypes from 'prop-types';
-import { getTranslate } from 'react-localize-redux';
-import fileDownload from 'js-file-download';
 import update from 'immutability-helper';
-import Alert from 'react-s-alert';
+import fileDownload from 'js-file-download';
+import _ from 'lodash';
+import PropTypes from 'prop-types';
 import { confirmAlert } from 'react-confirm-alert';
+import { Form } from 'react-final-form';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import Alert from 'react-s-alert';
+
+import { fetchReasonCodes, hideSpinner, showSpinner } from 'actions';
+import ArrayField from 'components/form-elements/ArrayField';
+import ButtonField from 'components/form-elements/ButtonField';
+import LabelField from 'components/form-elements/LabelField';
+import TableRowWithSubfields from 'components/form-elements/TableRowWithSubfields';
+import EditPickModal from 'components/stock-movement-wizard/modals/EditPickModal';
+import AlertMessage from 'utils/AlertMessage';
+import {
+  flattenRequest,
+  handleError,
+  handleSuccess,
+  parseResponse,
+} from 'utils/apiClient';
+import { renderFormField } from 'utils/form-utils';
+import renderHandlingIcons from 'utils/product-handling-icons';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-confirm-alert/src/react-confirm-alert.css';
 
@@ -34,10 +53,19 @@ const FIELDS = {
     isFirstPageLoaded: ({ isFirstPageLoaded }) => isFirstPageLoaded,
     rowComponent: TableRowWithSubfields,
     subfieldKey: 'picklistItems',
-    getDynamicRowAttr: ({ rowValues, subfield }) => {
+    getDynamicRowAttr: ({
+      rowValues, subfield, showOnlyErroredItems, itemFilter,
+    }) => {
       let className = rowValues.initial ? 'crossed-out ' : '';
       if (!subfield) { className += 'font-weight-bold'; }
-      return { className };
+      const filterOutItems = itemFilter && !(
+        rowValues.product.name.toLowerCase().includes(itemFilter.toLowerCase()) ||
+        rowValues.productCode.toLowerCase().includes(itemFilter.toLowerCase())
+      );
+      const hideRow = (
+        (showOnlyErroredItems && !rowValues.hasError) || filterOutItems
+      ) && !subfield;
+      return { className, hideRow };
     },
     fields: {
       productCode: {
@@ -80,7 +108,7 @@ const FIELDS = {
         label: 'react.stockMovement.expiry.label',
         defaultMessage: 'Expiry',
       },
-      'binLocation.name': {
+      binLocation: {
         type: LabelField,
         flexWidth: '1.1',
         label: 'react.stockMovement.binLocation.label',
@@ -88,6 +116,14 @@ const FIELDS = {
         getDynamicAttr: ({ hasBinLocationSupport }) => ({
           hide: !hasBinLocationSupport,
         }),
+        attributes: {
+          showValueTooltip: true,
+          formatValue: fieldValue => fieldValue && (
+            <div className="d-flex">
+              {fieldValue.zoneName ? <div className="text-truncate" style={{ minWidth: 30, flexShrink: 20 }}>{fieldValue.zoneName}</div> : ''}
+              <div className="text-truncate">{fieldValue.zoneName ? `: ${fieldValue.name}` : fieldValue.name}</div>
+            </div>),
+        },
       },
       quantityRequired: {
         type: LabelField,
@@ -118,13 +154,12 @@ const FIELDS = {
           defaultTitleMessage: 'Edit Pick',
         },
         getDynamicAttr: ({
-          fieldValue, subfield, stockMovementId, updatePickPageItem,
+          fieldValue, subfield, updatePickPageItem,
           reasonCodes, hasBinLocationSupport, showOnly,
         }) => ({
-          fieldValue: flattenRequest(fieldValue),
+          itemId: _.get(fieldValue, 'requisitionItem.id'),
           btnOpenDisabled: showOnly,
           subfield,
-          stockMovementId,
           btnOpenText: fieldValue && fieldValue.hasChangedPick ? '' : 'react.default.button.edit.label',
           btnOpenDefaultText: fieldValue && fieldValue.hasChangedPick ? '' : 'Edit',
           btnOpenClassName: fieldValue && fieldValue.hasChangedPick ? ' btn fa fa-check btn-outline-success' : 'btn btn-outline-primary',
@@ -173,6 +208,8 @@ const FIELDS = {
   },
 };
 
+const apiClient = axios.create({});
+
 /* eslint class-methods-use-this: ["error",{ "exceptMethods": ["checkForInitialPicksChanges"] }] */
 /**
  * The forth step of stock movement(for movements from a depot) where user
@@ -188,6 +225,9 @@ class PickPage extends Component {
       values: { ...this.props.initialValues, pickPageItems: [] },
       totalCount: 0,
       isFirstPageLoaded: false,
+      showAlert: false,
+      alertMessage: '',
+      itemFilter: '',
     };
 
     this.revertUserPick = this.revertUserPick.bind(this);
@@ -197,6 +237,10 @@ class PickPage extends Component {
     this.importTemplate = this.importTemplate.bind(this);
     this.isRowLoaded = this.isRowLoaded.bind(this);
     this.loadMoreRows = this.loadMoreRows.bind(this);
+    this.recreatePicklist = this.recreatePicklist.bind(this);
+    this.handleValidationErrors = this.handleValidationErrors.bind(this);
+
+    apiClient.interceptors.response.use(handleSuccess, this.handleValidationErrors);
   }
 
   componentDidMount() {
@@ -257,6 +301,15 @@ class PickPage extends Component {
     this.fetchPickPageData();
     if (!this.props.isPaginated) {
       this.fetchPickPageItems();
+    } else if (forceFetch) {
+      this.setState({
+        values: {
+          ...this.state.values,
+          pickPageItems: [],
+        },
+      }, () => {
+        this.loadMoreRows({ startIndex: 0 });
+      });
     }
   }
 
@@ -388,16 +441,59 @@ class PickPage extends Component {
     return Promise.resolve();
   }
 
+  validatePicklist() {
+    const url = `/openboxes/api/stockMovements/${this.state.values.stockMovementId}/validatePicklist`;
+    return apiClient.get(url);
+  }
+
+  handleValidationErrors(error) {
+    if (error.response.status === 400) {
+      const alertMessage = _.join(_.get(error, 'response.data.errorMessages', ''), ' ');
+      this.setState({ alertMessage, showAlert: true });
+
+      return Promise.reject(error);
+    }
+
+    return handleError(error);
+  }
+
+  validateReasonCodes(lineItems) {
+    const { pickPageItems } = lineItems;
+    const invalidItem = _.find(
+      pickPageItems,
+      pickPageItem => pickPageItem.quantityRequired > pickPageItem.quantityPicked && _.find(
+        pickPageItem.picklistItems,
+        item => !item.reasonCode && !item.initial,
+      ),
+    );
+
+    if (invalidItem) {
+      this.setState({
+        showAlert: true,
+        alertMessage: `Product ${invalidItem.productCode} requires a reason code for the pick value. 
+        Please add a reason code through the Edit Pick.`,
+      });
+      return false;
+    }
+
+    return true;
+  }
+
   /**
    * Goes to the next stock movement step.
    * @param {object} formValues
    * @public
    */
   nextPage(formValues) {
-    this.props.showSpinner();
-    this.transitionToNextStep()
-      .then(() => this.props.nextPage(formValues))
-      .catch(() => this.props.hideSpinner());
+    if (this.validateReasonCodes(formValues)) {
+      this.props.showSpinner();
+      this.validatePicklist()
+        .then(() =>
+          this.transitionToNextStep()
+            .then(() => this.props.nextPage(formValues))
+            .catch(() => this.props.hideSpinner()))
+        .catch(() => this.props.hideSpinner());
+    }
   }
 
   /**
@@ -430,13 +526,18 @@ class PickPage extends Component {
     this.props.showSpinner();
 
     const itemsUrl = `/api/stockMovementItems/${itemId}/createPicklist`;
+    const itemsUrl = `/openboxes/api/stockMovementItems/${itemId}?stepNumber=4`;
 
-    apiClient.post(itemsUrl)
-      .then((resp) => {
-        const pickPageItem = resp.data.data;
+    apiClient.post(createPicklistUrl)
+      .then(() => {
+        apiClient.get(itemsUrl)
+          .then((resp) => {
+            const pickPageItem = resp.data.data;
 
-        this.updatePickPageItem(pickPageItem);
-        this.props.hideSpinner();
+            this.updatePickPageItem(pickPageItem);
+            this.props.hideSpinner();
+          })
+          .catch(() => { this.props.hideSpinner(); });
       })
       .catch(() => { this.props.hideSpinner(); });
   }
@@ -504,6 +605,15 @@ class PickPage extends Component {
       });
   }
 
+  recreatePicklist() {
+    const url = `/openboxes/api/stockMovements/createPickList/${this.state.values.stockMovementId}`;
+    this.props.showSpinner();
+
+    apiClient.get(url)
+      .then(() => this.fetchAllData(true))
+      .catch(() => this.props.hideSpinner());
+  }
+
   /**
    * Refetch the data, all not saved changes will be lost.
    * @public
@@ -513,13 +623,13 @@ class PickPage extends Component {
       title: this.props.translate('react.stockMovement.message.confirmRefresh.label', 'Confirm refresh'),
       message: this.props.translate(
         'react.stockMovement.confirmPickRefresh.message',
-        'This button will redo the autopick on all items that have not been previously edited. Are you sure you want to continue?',
+        'This button will redo the autopick on all items. Are you sure you want to continue?',
       ),
       buttons: [
         {
           label: this.props.translate('react.default.yes.label', 'Yes'),
           onClick: () => {
-            this.fetchAllData(true);
+            this.recreatePicklist();
           },
         },
         {
@@ -530,6 +640,7 @@ class PickPage extends Component {
   }
 
   render() {
+    const { itemFilter } = this.state;
     const { showOnly } = this.props;
     return (
       <Form
@@ -538,8 +649,27 @@ class PickPage extends Component {
         initialValues={this.state.values}
         render={({ handleSubmit, values }) => (
           <div className="d-flex flex-column">
+            <AlertMessage show={this.state.showAlert} message={this.state.alertMessage} danger />
             { !showOnly ?
               <span className="buttons-container">
+                <div className="d-flex mr-auto justify-content-center align-items-center">
+                  <input
+                    value={itemFilter}
+                    onChange={event => this.setState({ itemFilter: event.target.value })}
+                    className="float-left btn btn-outline-secondary btn-xs filter-input mr-1 mb-1"
+                    placeholder={this.props.translate('react.stockMovement.searchPlaceholder.label', 'Search...')}
+                  />
+                  {itemFilter &&
+                    <i
+                      role="button"
+                      className="fa fa-times-circle"
+                      style={{ color: 'grey', cursor: 'pointer' }}
+                      onClick={() => this.setState({ itemFilter: '' })}
+                      onKeyPress={() => this.setState({ itemFilter: '' })}
+                      tabIndex={0}
+                    />
+                  }
+                </div>
                 <label
                   htmlFor="csvInput"
                   className="float-right mb-1 btn btn-outline-secondary align-self-end ml-1 btn-xs"
@@ -620,6 +750,7 @@ class PickPage extends Component {
                   isPaginated: this.props.isPaginated,
                   showOnly,
                   isFirstPageLoaded: this.state.isFirstPageLoaded,
+                  itemFilter,
                 }))}
               </div>
               <div className="d-print-none submit-buttons">

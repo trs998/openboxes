@@ -1,15 +1,28 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import PropTypes from 'prop-types';
-import fileDownload from 'js-file-download';
-import { Form } from 'react-final-form';
+
 import arrayMutators from 'final-form-arrays';
-import Alert from 'react-s-alert';
-import { confirmAlert } from 'react-confirm-alert';
-import { getTranslate } from 'react-localize-redux';
-import moment from 'moment';
 import update from 'immutability-helper';
+import fileDownload from 'js-file-download';
+import _ from 'lodash';
+import moment from 'moment';
+import PropTypes from 'prop-types';
+import { confirmAlert } from 'react-confirm-alert';
+import { Form } from 'react-final-form';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import Alert from 'react-s-alert';
+
+import { fetchUsers, hideSpinner, showSpinner } from 'actions';
+import ArrayField from 'components/form-elements/ArrayField';
+import ButtonField from 'components/form-elements/ButtonField';
+import DateField from 'components/form-elements/DateField';
+import SelectField from 'components/form-elements/SelectField';
+import TextField from 'components/form-elements/TextField';
+import apiClient from 'utils/apiClient';
+import { renderFormField } from 'utils/form-utils';
+import { debounceProductsFetch } from 'utils/option-utils';
+import renderHandlingIcons from 'utils/product-handling-icons';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-confirm-alert/src/react-confirm-alert.css';
 
@@ -37,8 +50,10 @@ const DELETE_BUTTON_FIELD = {
     fieldValue, removeItem, removeRow, updateTotalCount,
   }) => ({
     onClick: fieldValue && fieldValue.id ? () => {
-      removeItem(fieldValue.id).then(() => removeRow());
-      updateTotalCount(-1);
+      removeItem(fieldValue.id).then(() => {
+        updateTotalCount(-1);
+        removeRow();
+      });
     } : () => { updateTotalCount(-1); removeRow(); },
     disabled: fieldValue && fieldValue.statusCode === 'SUBSTITUTED',
   }),
@@ -113,10 +128,10 @@ const VENDOR_FIELDS = {
           options: [],
           showValueTooltip: true,
           optionRenderer: option => (
-            <strong style={{ color: option.color ? option.color : 'black' }} className="d-flex align-items-center">
+            <strong style={{ color: option.color || 'black' }} className="d-flex align-items-center">
               {option.label}
               &nbsp;
-              {renderHandlingIcons(option.value ? option.value.handlingIcons : [])}
+              {renderHandlingIcons(option.handlingIcons)}
             </strong>
           ),
           valueRenderer: option => (
@@ -390,6 +405,7 @@ class AddItemsPage extends Component {
     const date = moment(this.props.minimumExpirationDate, 'MM/DD/YYYY');
 
     _.forEach(values.lineItems, (item, key) => {
+      errors.lineItems[key] = {};
       if (!_.isNil(item.product) && (!item.quantityRequested || item.quantityRequested < 0)) {
         errors.lineItems[key] = { quantityRequested: 'react.stockMovement.error.enterQuantity.label' };
       }
@@ -402,6 +418,18 @@ class AddItemsPage extends Component {
       }
       if (item.expirationDate && (_.isNil(item.lotNumber) || _.isEmpty(item.lotNumber))) {
         errors.lineItems[key] = { lotNumber: 'react.stockMovement.error.expiryWithoutLot.label' };
+      }
+      if (!_.isNil(item.product) && item.product.lotAndExpiryControl) {
+        if (!item.expirationDate && (_.isNil(item.lotNumber) || _.isEmpty(item.lotNumber))) {
+          errors.lineItems[key] = {
+            expirationDate: 'react.stockMovement.error.lotAndExpiryControl.label',
+            lotNumber: 'react.stockMovement.error.lotAndExpiryControl.label',
+          };
+        } else if (!item.expirationDate) {
+          errors.lineItems[key] = { expirationDate: 'react.stockMovement.error.lotAndExpiryControl.label' };
+        } else if (_.isNil(item.lotNumber) || _.isEmpty(item.lotNumber)) {
+          errors.lineItems[key] = { lotNumber: 'react.stockMovement.error.lotAndExpiryControl.label' };
+        }
       }
     });
     return errors;
@@ -726,7 +754,7 @@ class AddItemsPage extends Component {
    */
   saveAndExit(formValues) {
     const errors = this.validate(formValues).lineItems;
-    if (!errors.length) {
+    if (errors.length && errors.every(obj => typeof obj === 'object' && _.isEmpty(obj))) {
       this.saveRequisitionItemsInCurrentStep(formValues.lineItems)
         .then(() => {
           window.location = stringUrlInterceptor(`/stockMovement/show/${formValues.stockMovementId}`);

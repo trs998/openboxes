@@ -238,14 +238,6 @@
 											${locationInstance?.active}
 		                                </td>
 		                            </tr>
-		                            <tr class="prop">
-		                                <td valign="top" class="name">
-			                                <label for="local"><warehouse:message code="warehouse.local.label" /></label>
-		                                </td>
-		                                <td valign="top" class="value${hasErrors(bean: locationInstance, field: 'local', 'errors')}">
-											${locationInstance?.local}
-		                                </td>
-		                            </tr>
 
 		                            <tr class="prop">
 		                                <td valign="top" class="name">

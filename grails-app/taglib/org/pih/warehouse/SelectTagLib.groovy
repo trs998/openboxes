@@ -13,16 +13,15 @@ import org.grails.core.artefact.DomainClassArtefactHandler
 import org.pih.warehouse.core.ActivityCode
 import org.pih.warehouse.core.BudgetCode
 import org.pih.warehouse.core.Constants
+import org.pih.warehouse.core.EntityTypeCode
 import org.pih.warehouse.core.GlAccount
 import org.pih.warehouse.core.GlAccountType
 import org.pih.warehouse.core.Location
-import org.pih.warehouse.core.LocationType
 import org.pih.warehouse.core.Organization
-import org.pih.warehouse.core.PartyRole
 import org.pih.warehouse.core.PaymentMethodType
 import org.pih.warehouse.core.PaymentTerm
 import org.pih.warehouse.core.Person
-import org.pih.warehouse.core.PreferenceTypeCode
+import org.pih.warehouse.core.PreferenceType
 import org.pih.warehouse.core.RatingTypeCode
 import org.pih.warehouse.core.ReasonCode
 import org.pih.warehouse.core.Tag
@@ -35,7 +34,6 @@ import org.pih.warehouse.inventory.InventoryItem
 import org.pih.warehouse.inventory.TransactionType
 import org.pih.warehouse.order.Order
 import org.pih.warehouse.order.OrderAdjustmentType
-import org.pih.warehouse.order.OrderItem
 import org.pih.warehouse.product.Category
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.product.ProductAssociationTypeCode
@@ -56,6 +54,7 @@ class SelectTagLib {
     def locationService
     def shipmentService
     def requisitionService
+    def organizationService
 
     //@Cacheable("selectCategoryCache")
     def selectCategory = { attrs, body ->
@@ -113,6 +112,11 @@ class SelectTagLib {
         out << g.select(attrs)
     }
 
+    def selectEntityTypeCode = { attrs, body ->
+        attrs.from = EntityTypeCode.values()
+        attrs.optionValue = { format.metadata(obj: it) }
+        out << g.select(attrs)
+    }
     //@Cacheable("selectTagCache")
     def selectTag = { attrs, body ->
         def tags = Tag.list(sort: "tag").collect {
@@ -218,7 +222,9 @@ class SelectTagLib {
     }
 
     def selectPreferenceType = { attrs, body ->
-        attrs.from = PreferenceTypeCode.list()
+        attrs.from = PreferenceType.list()
+        attrs.optionKey = "id"
+        attrs.optionValue = { it.name }
         out << g.select(attrs)
     }
 
@@ -228,13 +234,7 @@ class SelectTagLib {
     }
 
     def selectOrganization = { attrs, body ->
-        def roleTypes = attrs.roleTypes
-
-        if (roleTypes) {
-            def partyRoles = PartyRole.findAllByRoleTypeInList(roleTypes)
-            def organizations = partyRoles.collect { it.party }.unique()
-            attrs.from = organizations
-        }
+        attrs.from = organizationService.selectOrganizations(attrs.roleTypes)
         attrs.optionKey = 'id'
         attrs.optionValue = { it.name }
         out << g.select(attrs)
@@ -404,12 +404,28 @@ class SelectTagLib {
         }
     }
 
+    def selectBinLocationWithOptGroup = { attrs, body ->
+        def currentLocation = Location.get(session?.warehouse?.id)
+        if (currentLocation.hasBinLocationSupport()) {
+            attrs.from = locationService.getBinLocations(currentLocation).sort {
+                it?.name?.toLowerCase()
+            }
+            attrs.optionKey = 'id'
+            attrs.optionValue = { it.zone ? it.zone.name + ": " + it.name : it.name }
+            attrs.groupBy = 'zone'
+
+            out << g.selectWithOptGroup(attrs)
+        } else {
+            out << g.message(code: "default.notSupported.label")
+            out << g.hiddenField(id: attrs.id, name: attrs.name, value: attrs.value)
+        }
+    }
+
     def selectBinLocationByLocation = { attrs, body ->
-        log.info "selectBinLocationByLocation: " + attrs
         def location = Location.get(attrs.id)
 
         if (location && location.hasBinLocationSupport()) {
-            attrs.from = Location.findAllByParentLocationAndActive(location, true).sort {
+            attrs.from = locationService.getBinLocations(location).sort {
                 it?.name?.toLowerCase()
             }
         }
@@ -419,7 +435,20 @@ class SelectTagLib {
         attrs.optionKey = 'id'
         attrs.optionValue = 'name'
 
-        log.info "attrs: " + attrs
+        out << g.select(attrs)
+    }
+
+    def selectZoneLocationByLocation = { attrs, body ->
+        def location = Location.get(attrs.id)
+
+        if (location) {
+            attrs.from = locationService.getZones(location)
+        }
+
+        attrs["class"] = "chzn-select-deselect"
+        attrs["noSelection"] = ["null": ""]
+        attrs.optionKey = 'id'
+        attrs.optionValue = 'name'
 
         out << g.select(attrs)
     }
@@ -456,7 +485,7 @@ class SelectTagLib {
 
             // use sparingly - this is expensive since it requires multiple database queries
             if (activityCode) {
-                attrs.from = attrs.from.findAll { it.supports(activityCode) }
+                attrs.from = attrs.from.findAll { it.supports(activityCode) || (!it.supports(activityCode) && it.supports(ActivityCode.SUBMIT_REQUEST)) }
             }
         }
 
@@ -523,11 +552,9 @@ class SelectTagLib {
 
     def selectOrderSupplier = { attrs, body ->
         def currentLocation = Location.get(session?.warehouse?.id)
-        attrs.from = locationService.getOrderSuppliers(currentLocation).sort {
-            it?.name?.toLowerCase()
-        }
+        attrs.from = locationService.getOrderSuppliers(currentLocation)
         attrs.optionKey = 'id'
-        attrs.optionValue = { it.name + " [" + format.metadata(obj: it?.locationType) + "]" }
+        attrs.optionValue = { "${it.organization?.code ? it.organization?.code + ' - ' :''}${it.name}" }
         out << g.select(attrs)
     }
 
@@ -564,7 +591,8 @@ class SelectTagLib {
             attrs["class"] = "chzn-select-deselect"
             out << g.select(attrs)
         } else {
-            attrs["class"] = "text large"
+            attrs["class"] = "text large readonly"
+            attrs["disabled"] = "disabled"
             out << g.textField(attrs)
         }
     }
@@ -580,7 +608,7 @@ class SelectTagLib {
     }
 
     def selectLocale = { attrs, body ->
-        attrs.from = grailsApplication.config.openboxes.locale.supportedLocales
+        attrs.from = grailsApplication.config.openboxes.locale.supportedLocales?.sort()
         attrs.optionValue = { new Locale(it).displayName }
         out << g.select(attrs)
     }
@@ -609,6 +637,7 @@ class SelectTagLib {
         def noSelection = attrs.remove('noSelection')
         def disabled = attrs.remove('disabled')
         Set optGroupSet = new TreeSet()
+        def noGroup = []
         attrs.id = attrs.id ? attrs.id : attrs.name
 
         if (value instanceof Collection && attrs.multiple == null) {
@@ -625,7 +654,7 @@ class SelectTagLib {
 
         // figure out the groups
         from.each {
-            optGroupSet.add(it.properties[groupBy])
+            it.properties[groupBy] ? optGroupSet.add(it.properties[groupBy]) : noGroup.add(it)
         }
 
         writer << "<select name=\"${attrs.remove('name')}\" "
@@ -703,6 +732,25 @@ class SelectTagLib {
                 }
 
                 writer << '</optgroup>'
+                writer.println()
+            }
+            // iterate through items with no group
+            noGroup.each {
+                writer << '<option '
+                def keyValue = null
+                // check type of optionKey, retrieve value from iterated object and assign it to keyValue
+                if (optionKey instanceof Closure) {
+                    keyValue = optionKey(it)
+                } else if (it != null && optionKey == 'id' && grailsApplication.getArtefact(DomainClassArtefactHandler.TYPE, it.getClass().name)) {
+                    keyValue = it.ident()
+                } else {
+                    keyValue = it[optionKey]
+                }
+                // add value to the option and mark if it's selected
+                writeValueAndCheckIfSelected(keyValue, value, writer)
+                writer << '>'
+                writer << optionValue(it).toString().encodeAsHTML()
+                writer << '</option>'
                 writer.println()
             }
         }

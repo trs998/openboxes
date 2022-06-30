@@ -72,7 +72,7 @@ class ProductApiControllerTests extends ControllerUnitTestCase {
     void testDemand() {
         controller.params.id = "1"
         controller.forecastingService = [
-                getDemand: { Location l, Product p -> return ["demand"] }
+                getDemand: { Location origin, Location destination, Product p -> return ["demand"] }
         ]
         //WHEN
         controller.demand()
@@ -104,7 +104,8 @@ class ProductApiControllerTests extends ControllerUnitTestCase {
         // GIVEN
         controller.params.name = "Product"
         controller.productService = [
-                searchProducts: { String[] terms, List<Category> categories -> return [product] }
+                searchProducts: { String[] terms, List<Category> categories -> return [product] },
+                searchProductDtos: { String[] terms -> return [product] }
         ]
         // WHEN
         controller.list()

@@ -9,6 +9,8 @@
  **/
 package org.pih.warehouse.product
 
+import org.hibernate.type.EntityType
+import org.pih.warehouse.core.EntityTypeCode
 import org.pih.warehouse.core.UnitOfMeasure
 import org.pih.warehouse.core.UnitOfMeasureClass
 
@@ -42,7 +44,9 @@ class Attribute {
     Date dateCreated
     Date lastUpdated
 
-    static hasMany = [options: String]
+    static transients = ["entityTypeCode"]
+
+    static hasMany = [options: String, entityTypeCodes: EntityTypeCode]
 
     static mapping = {
         id generator: 'uuid'
@@ -60,4 +64,13 @@ class Attribute {
     }
 
     String toString() { return "$name" }
+
+    /**
+     * Convenience method to help handle the case where we're only allowing one entity type code
+     * If we switch back to allowing multiple then we should get rid of this method.
+     */
+    EntityTypeCode getEntityTypeCode() {
+        entityTypeCodes ? entityTypeCodes.iterator().next() : null
+    }
+
 }

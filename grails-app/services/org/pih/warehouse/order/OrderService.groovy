@@ -13,7 +13,9 @@ import grails.core.GrailsApplication
 import grails.gorm.transactions.Transactional
 import grails.validation.ValidationException
 import grails.util.Holders
+import java.math.RoundingMode
 import grails.plugins.csv.CSVMapReader
+import org.hibernate.criterion.CriteriaSpecification
 import org.pih.warehouse.core.BudgetCode
 import org.pih.warehouse.core.Constants
 import org.pih.warehouse.core.Event
@@ -24,11 +26,13 @@ import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.LocationType
 import org.pih.warehouse.core.Organization
 import org.pih.warehouse.core.Person
+import org.pih.warehouse.core.ProductPrice
 import org.pih.warehouse.core.RoleType
 import org.pih.warehouse.core.UnitOfMeasure
 import org.pih.warehouse.core.UpdateUnitPriceMethodCode
 import org.pih.warehouse.core.User
 import org.pih.warehouse.core.UserService
+import org.pih.warehouse.importer.CSVUtils
 import org.pih.warehouse.data.DataService
 import org.pih.warehouse.data.PersonDataService
 import org.pih.warehouse.data.ProductSupplierDataService
@@ -66,14 +70,15 @@ class OrderService {
     def getOrders(Order orderTemplate, Date dateOrderedFrom, Date dateOrderedTo, Map params) {
         def orders = Order.createCriteria().list(params) {
             and {
-                if (orderTemplate.name || orderTemplate.description) {
+                if (params.q) {
                     or {
-                        ilike("name", "%" + orderTemplate.name + "%")
-                        ilike("description", "%" + orderTemplate.name + "%")
+                        ilike("name", "%" + params.q + "%")
+                        ilike("description", "%" + params.q + "%")
+                        ilike("orderNumber", "%" + params.q + "%")
                     }
                 }
-                if (orderTemplate.orderNumber) {
-                    ilike("orderNumber", "%" + orderTemplate.orderNumber + "%")
+                if (orderTemplate.orderType) {
+                    eq("orderType", orderTemplate.orderType)
                 }
                 if (orderTemplate.orderTypeCode) {
                     eq("orderTypeCode", orderTemplate.orderTypeCode)
@@ -99,10 +104,25 @@ class OrderService {
                 if (orderTemplate.createdBy) {
                     eq("createdBy", orderTemplate.createdBy)
                 }
+                if (orderTemplate.destinationParty) {
+                    destinationParty {
+                        eq("id", params.destinationParty)
+                    }
+                }
             }
             order("dateOrdered", "desc")
         }
         return orders
+    }
+
+    Order createNewPurchaseOrder(Location currentLocation, User user, Boolean isCentralPurchasingEnabled) {
+        Order order = new Order()
+        if (!isCentralPurchasingEnabled) {
+            order.destination = currentLocation
+        }
+        order.destinationParty = currentLocation?.organization
+        order.orderedBy = user
+        return order
     }
 
     /**
@@ -133,7 +153,7 @@ class OrderService {
             and {
                 eq("origin", origin)
                 eq("destination", destination)
-                eq("orderTypeCode", OrderTypeCode.PURCHASE_ORDER)
+                eq("orderType", OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name()))
             }
         }
     }
@@ -273,7 +293,8 @@ class OrderService {
     String generatePurchaseOrderSequenceNumber(Order order) {
         try {
             Integer sequenceNumber = getNextSequenceNumber(order.destinationParty.id)
-            String sequenceNumberStr = identifierService.generateSequenceNumber(sequenceNumber.toString())
+            String sequenceNumberFormat = ConfigurationHolder.config.openboxes.identifier.purchaseOrder.sequenceNumber.format
+            String sequenceNumberStr = identifierService.generateSequenceNumber(sequenceNumber.toString(), sequenceNumberFormat)
 
             // Properties to be used to get argument values for the template
             Map properties = Holders.grailsApplication.config.openboxes.identifier.purchaseOrder.properties
@@ -312,7 +333,7 @@ class OrderService {
             }
         }
 
-        if (!order.hasErrors() && order.save()) {
+        if (!order.hasErrors() && order.save(flush: true)) {
             return order
         } else {
             throw new ValidationException("Unable to save order due to errors", order.errors)
@@ -326,15 +347,15 @@ class OrderService {
             if (orderInstance?.status >= OrderStatus.PLACED) {
                 orderInstance.errors.rejectValue("status", "order.hasAlreadyBeenPlaced.message")
             } else {
-                if (orderInstance?.orderItems?.size() > 0) {
+                if (orderInstance?.orderItems?.size() > 0 || orderInstance?.orderAdjustments?.size() > 0) {
                     if (canApproveOrder(orderInstance, userInstance)) {
-                        orderInstance.orderItems.each { orderItem ->
+                        orderInstance?.orderItems?.each { orderItem ->
                             orderItem.actualReadyDate = orderItem.estimatedReadyDate
                         }
                         orderInstance.status = OrderStatus.PLACED
                         orderInstance.dateApproved = new Date()
                         orderInstance.approvedBy = userInstance
-                        if (!orderInstance.hasErrors() && orderInstance.save(flush: true)) {
+                        if (!orderInstance.hasErrors() && orderInstance.merge()) {
                             grailsApplication.mainContext.publishEvent(new OrderStatusEvent(OrderStatus.PLACED, orderInstance))
                             return orderInstance
                         }
@@ -487,6 +508,9 @@ class OrderService {
 
 
     void deleteOrder(Order orderInstance) {
+        orderInstance.shipments?.each { Shipment it ->
+            shipmentService.deleteShipment(it)
+        }
         deleteTransactions(orderInstance)
         orderInstance.delete(flush: true)
     }
@@ -507,8 +531,10 @@ class OrderService {
             if (method == UpdateUnitPriceMethodCode.LAST_PURCHASE_PRICE) {
                 BigDecimal pricePerPackage = orderItem.unitPrice * orderItem?.order?.lookupCurrentExchangeRate()
                 BigDecimal pricePerUnit = pricePerPackage / orderItem?.quantityPerUom
-                orderItem.product.pricePerUnit = pricePerUnit
-                orderItem.product.save()
+                if (pricePerUnit != 0) {
+                    orderItem.product.pricePerUnit = pricePerUnit
+                    orderItem.product.save()
+                }
             }
             else {
                 log.warn("Cannot update unit price because method ${method} is not currently supported")
@@ -548,12 +574,21 @@ class OrderService {
                 productPackage.name = "${orderItem?.quantityUom?.code}/${orderItem?.quantityPerUom as Integer}"
                 productPackage.uom = orderItem.quantityUom
                 productPackage.quantity = orderItem.quantityPerUom as Integer
-                productPackage.price = packagePrice
+                ProductPrice productPrice = new ProductPrice()
+                productPrice.price = packagePrice
+                productPackage.productPrice = productPrice
                 productPackage.save()
             }
             // Otherwise update the price
-            else {
-                productPackage.price = packagePrice
+            else if (packagePrice > 0) {
+                if (productPackage.productPrice) {
+                    productPackage.productPrice.price = packagePrice
+                } else {
+                    ProductPrice productPrice = new ProductPrice()
+                    productPrice.price = packagePrice
+                    productPackage.productPrice = productPrice
+                }
+                productPackage.lastUpdated = new Date()
             }
             // Associate product package with order item
             orderItem.productPackage = productPackage
@@ -562,8 +597,15 @@ class OrderService {
             }
         }
         // Otherwise we update the existing price
-        else {
-            orderItem.productPackage.price = packagePrice
+        else if (packagePrice > 0) {
+            if (orderItem.productPackage.productPrice) {
+                orderItem.productPackage.productPrice.price = packagePrice
+            } else {
+                ProductPrice productPrice = new ProductPrice()
+                productPrice.price = packagePrice
+                orderItem.productPackage.productPrice = productPrice
+            }
+
         }
     }
 
@@ -575,7 +617,7 @@ class OrderService {
      * @param orderItems
      * @return
      */
-    boolean importOrderItems(String orderId, String supplierId, List orderItems) {
+    boolean importOrderItems(String orderId, String supplierId, List orderItems, Location currentLocation) {
 
         int count = 0
         try {
@@ -583,7 +625,7 @@ class OrderService {
 
             Order order = Order.get(orderId)
 
-            if (validateOrderItems(orderItems)) {
+            if (validateOrderItems(orderItems, order)) {
 
                 orderItems.each { item ->
 
@@ -593,13 +635,14 @@ class OrderService {
                     def sourceCode = item["sourceCode"]
                     def sourceName = item["sourceName"]
                     def supplierCode = item["supplierCode"]
-                    def manufacturer = item["manufacturer"]
+                    def manufacturerName = item["manufacturer"]
                     def manufacturerCode = item["manufacturerCode"]
                     def quantity = item["quantity"]
                     String recipient = item["recipient"]
                     def unitPrice = item["unitPrice"]
                     def unitOfMeasure = item["unitOfMeasure"]
                     def estimatedReadyDate = item["estimatedReadyDate"]
+                    def actualReadyDate = item["actualReadyDate"]
                     def code = item["budgetCode"]
 
                     OrderItem orderItem
@@ -619,7 +662,7 @@ class OrderService {
                         if (!product) {
                             throw new ProductException("Unable to locate product with product code ${productCode}")
                         }
-                        if (order.destination.isAccountingRequired() && !product.glAccount) {
+                        if (currentLocation.isAccountingRequired() && !product.glAccount) {
                             throw new ProductException("Product ${productCode}: Cannot add order item without a valid general ledger code")
                         }
                         orderItem.product = product
@@ -635,51 +678,47 @@ class OrderService {
                         if (productSource) {
                             orderItem.productSupplier = productSource
                         }
+                    } else {
+                        Organization supplier = Organization.get(supplierId)
+                        Organization manufacturer = null
+                        if (manufacturerName) {
+                            manufacturer = Organization.findByName(manufacturerName)
+                        }
                     } else if (supplierCode && manufacturer && manufacturerCode) {
                         if (Organization.get(manufacturer)) {
                             Organization supplier = Organization.get(supplierId)
-                            def supplierParams = [manufacturer: manufacturer,
-                                                  product: product,
-                                                  supplierCode: supplierCode,
-                                                  manufacturerCode: manufacturerCode,
-                                                  supplier: supplier,
-                                                  sourceName: sourceName]
-                            ProductSupplier productSupplier = productSupplierDataService.getOrCreateNew(supplierParams)
+                        def supplierParams = [manufacturer: manufacturer?.id,
+                                              product: product,
+                                              supplierCode: supplierCode ?: null,
+                                              manufacturerCode: manufacturerCode ?: null,
+                                              supplier: supplier,
+                                              sourceName: sourceName]
+                        ProductSupplier productSupplier = productSupplierDataService.getOrCreateNew(supplierParams, false)
+
+                        if (productSupplier) {
                             orderItem.productSupplier = productSupplier
                         }
                     }
 
                     if (unitOfMeasure) {
                         String[] uomParts = unitOfMeasure.split("/")
-                        if (uomParts.length <= 1 || !UnitOfMeasure.findByName(uomParts[0])) {
+                        if (uomParts.length <= 1 || !UnitOfMeasure.findByCodeOrName(uomParts[0], uomParts[0])) {
                             throw new IllegalArgumentException("Could not find provided Unit of Measure: ${unitOfMeasure}.")
                         }
-                        UnitOfMeasure uom = uomParts.length > 1 ? UnitOfMeasure.findByName(uomParts[0]) : null
-                        BigDecimal qtyPerUom = uomParts.length > 1 ? BigDecimal.valueOf(Double.valueOf(uomParts[1])) : null
+                        UnitOfMeasure uom = uomParts.length > 1 ? UnitOfMeasure.findByCodeOrName(uomParts[0], uomParts[0]) : null
+                        BigDecimal qtyPerUom = uomParts.length > 1 ? CSVUtils.parseNumber(uomParts[1], "unitOfMeasure"): null
                         orderItem.quantityUom = uom
                         orderItem.quantityPerUom = qtyPerUom
                     } else {
                         throw new IllegalArgumentException("Missing unit of measure.")
                     }
 
-                    if (quantity == "") {
-                        throw new IllegalArgumentException("Missing quantity.")
-                    }
-                    Integer parsedQty = Integer.valueOf(quantity)
+                    Integer parsedQty = CSVUtils.parseInteger(quantity, "quantity")
                     if (parsedQty <= 0) {
                         throw new IllegalArgumentException("Wrong quantity value: ${parsedQty}.")
                     }
 
-                    if (unitPrice == "") {
-                        throw new IllegalArgumentException("Missing unit price.")
-                    }
-                    BigDecimal parsedUnitPrice
-                    try {
-                        parsedUnitPrice = new BigDecimal(unitPrice).setScale(2, RoundingMode.FLOOR)
-                    } catch (Exception e) {
-                        log.error("Unable to parse unit price: " + e.message, e)
-                        throw new IllegalArgumentException("Could not parse unit price with value: ${unitPrice}.")
-                    }
+                    BigDecimal parsedUnitPrice = CSVUtils.parseNumber(unitPrice, "unitPrice")
                     if (parsedUnitPrice < 0) {
                         throw new IllegalArgumentException("Wrong unit price value: ${parsedUnitPrice}.")
                     }
@@ -699,7 +738,18 @@ class OrderService {
                     }
                     orderItem.estimatedReadyDate = estReadyDate
 
-                    if (order.destination.isAccountingRequired() && !code) {
+                    def actReadyDate = null
+                    if (actualReadyDate) {
+                        try {
+                            actReadyDate = new Date(actualReadyDate)
+                        } catch (Exception e) {
+                            log.error("Unable to parse date: " + e.message, e)
+                            throw new IllegalArgumentException("Could not parse actual ready date with value: ${actualReadyDate}.")
+                        }
+                    }
+                    orderItem.actualReadyDate = actReadyDate
+
+                    if (currentLocation.isAccountingRequired() && !code) {
                         throw new IllegalArgumentException("Budget code is required.")
                     }
                     BudgetCode budgetCode = BudgetCode.findByCode(code)
@@ -757,13 +807,23 @@ class OrderService {
                 'totalCost',
                 'recipient',
                 'estimatedReadyDate',
+                'actualReadyDate',
                 'budgetCode'
             ]
             orderItems = csvMapReader.toList()
 
         } catch (Exception e) {
             throw new RuntimeException("Error parsing order item CSV: " + e.message, e)
+        }
 
+        // FIXME it's not entirely clear why we reformat strings here like this
+        orderItems.each { orderItem ->
+            if (orderItem.unitOfMeasure) {
+                String[] uomParts = orderItem.unitOfMeasure.split("/")
+                def quantityUom = CSVUtils.parseNumber(uomParts[1], "unitOfMeasure")
+                orderItem.unitOfMeasure = "${uomParts[0]}/${quantityUom}"
+            }
+            orderItem.unitPrice = orderItem.unitPrice ? CSVUtils.parseNumber(orderItem.unitPrice, "unitPrice").setScale(4, RoundingMode.FLOOR).toString() : ''
         }
 
         return orderItems
@@ -777,15 +837,31 @@ class OrderService {
      * @param orderItems
      * @return
      */
-    boolean validateOrderItems(List orderItems) {
-        return true
+    boolean validateOrderItems(List orderItems, Order order) {
+        def propertiesMap = grailsApplication.config.openboxes.purchaseOrder.editableProperties
+
+        orderItems.each { orderItem ->
+            OrderItem existingOrderItem = order.orderItems.find { it.id == orderItem.id }
+            propertiesMap.each {
+                def excludedProperties = it.deny
+                excludedProperties.each { property ->
+                    if (order.status == it.status) {
+                        def existingValue = existingOrderItem.toImport()."${property}"
+                        def importedValue = orderItem."${property}"
+                        if (existingValue != importedValue) {
+                            throw new IllegalArgumentException("Import must not change ${property} of item ${orderItem.productCode}, before: ${existingValue}, after: ${importedValue}")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     List<OrderItem> getPendingInboundOrderItems(Location destination) {
         def orderItems = OrderItem.createCriteria().list() {
             order {
                 eq("destination", destination)
-                eq("orderTypeCode", OrderTypeCode.PURCHASE_ORDER)
+                eq("orderType", OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name()))
                 not {
                     'in'("status", OrderStatus.PENDING)
                 }
@@ -802,12 +878,30 @@ class OrderService {
         def orderItems = OrderItem.createCriteria().list() {
             order {
                 eq("destination", destination)
-                eq("orderTypeCode", OrderTypeCode.PURCHASE_ORDER)
+                eq("orderType", OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name()))
                 not {
                     'in'("status", OrderStatus.PENDING)
                 }
             }
             eq("product", product)
+        }
+
+        return orderItems.findAll { !it.isCompletelyFulfilled() }
+    }
+
+    List<OrderItem> getPendingInboundOrderItems(Location destination, List<Product> products) {
+        def orderItems = OrderItem.createCriteria().list() {
+            order {
+                eq("destination", destination)
+                eq("orderType", OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name()))
+                not {
+                    'in'("status", OrderStatus.PENDING)
+                }
+            }
+            'in'("product", products)
+            not {
+                'in'("orderItemStatusCode", OrderItemStatusCode.CANCELED)
+            }
         }
 
         return orderItems.findAll { !it.isCompletelyFulfilled() }
@@ -867,4 +961,140 @@ class OrderService {
     def canManageAdjustments(Order order, User user) {
         return order.status == OrderStatus.PENDING || order?.status >= OrderStatus.PLACED && userService.hasRoleApprover(user)
     }
+
+    def getOrderSummaryList(Map params) {
+        return OrderSummary.createCriteria().list(params) {
+            if (params.orderNumber) {
+                ilike("orderNumber", "%${params.orderNumber}%")
+            }
+            if (params.orderStatus) {
+                'in'("orderStatus", params.orderStatus)
+            }
+            if (params.shipmentStatus) {
+                'in'("shipmentStatus", params.shipmentStatus)
+            }
+            if (params.receiptStatus) {
+                'in'("receiptStatus", params.receiptStatus)
+            }
+            if (params.paymentStatus) {
+                'in'("paymentStatus", params.paymentStatus)
+            }
+            if (params.derivedStatus) {
+                'in'("derivedStatus", params.derivedStatus)
+            }
+        }
+    }
+
+    def getOrderItemSummaryList(Map params) {
+        return OrderItemSummary.createCriteria().list(params) {
+            if (params.orderNumber) {
+                ilike("orderNumber", "%${params.orderNumber}%")
+            }
+            if (params.derivedStatus) {
+                'in'("derivedStatus", params.derivedStatus)
+            }
+        }
+    }
+
+    def getOrderItemDetailsList(Map params) {
+        return OrderItemDetails.createCriteria().list(params) {
+            if (params.orderNumber) {
+                ilike("orderNumber", "%${params.orderNumber}%")
+            }
+        }
+    }
+
+    List<OrderItem> getOrderItemsForPriceHistory(Organization supplierOrganization, Product productInstance, String query) {
+        def terms = "%" + query + "%"
+        def orderItems = OrderItem.createCriteria().list() {
+            resultTransformer(CriteriaSpecification.ALIAS_TO_ENTITY_MAP)
+            projections {
+                property("unitPrice", "unitPrice")
+                property("quantityPerUom", "quantityPerUom")
+                order {
+                    property("orderNumber", "orderNumber")
+                    property("id", "orderId")
+                    property("dateCreated", "dateCreated")
+                    property("name", "description")
+                }
+                product {
+                    property("productCode", "productCode")
+                    property("name", "productName")
+                }
+                productSupplier {
+                    property("code", "sourceCode")
+                    property("supplierCode", "supplierCode")
+                    property("manufacturerCode", "manufacturerCode")
+                    manufacturer {
+                        property("name", "manufacturerName")
+                    }
+                }
+            }
+            order {
+                eq("orderType", OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name()))
+                eq("originParty", supplierOrganization)
+            }
+            if (productInstance) {
+                eq("product", productInstance)
+            }
+            if (terms) {
+                or {
+                    product {
+                        or {
+                            ilike("productCode", terms)
+                            ilike("name", terms)
+                         }
+                    }
+                    order {
+                        or {
+                            ilike("orderNumber", terms)
+                            ilike("name", terms)
+                        }
+                    }
+                    productSupplier {
+                        or {
+                            ilike("manufacturerCode", terms)
+                            ilike("manufacturerName", terms)
+                            ilike("code", terms)
+                            ilike("supplierCode", terms)
+                            ilike("supplierName", terms)
+                        }
+                    }
+                }
+            }
+        }
+
+        return orderItems
+    }
+
+    def deleteAdjustment(OrderAdjustment orderAdjustment, User user) {
+        Order order = orderAdjustment.order;
+        if (!canManageAdjustments(order, user) || orderAdjustment.hasInvoices){
+            throw new UnsupportedOperationException("You do not have permissions to perform this action")
+        }
+
+        order.removeFromOrderAdjustments(orderAdjustment)
+        orderAdjustment.delete()
+
+        if (order.hasErrors()) {
+            throw new ValidationException("Invalid order", order.errors)
+        }
+        order.save(flush: true)
+    }
+
+    def removeOrderItem(OrderItem orderItem, User user) {
+        if (orderItem.hasShipmentAssociated() || !canOrderItemBeEdited(orderItem, user) || orderItem.hasInvoices) {
+            throw new UnsupportedOperationException("You do not have permissions to perform this action")
+        }
+
+        Order order = orderItem.order
+        order.removeFromOrderItems(orderItem)
+        orderItem.delete()
+
+        if (order.hasErrors()) {
+            throw new ValidationException("Invalid order", order.errors)
+        }
+        order.save(flush:true)
+    }
+
 }

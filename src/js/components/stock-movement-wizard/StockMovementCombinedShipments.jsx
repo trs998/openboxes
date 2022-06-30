@@ -1,16 +1,18 @@
-import moment from 'moment';
-import PropTypes from 'prop-types';
 import React, { Component } from 'react';
+
+import PropTypes from 'prop-types';
 import { getTranslate } from 'react-localize-redux';
 import { connect } from 'react-redux';
-import { fetchBreadcrumbsConfig, fetchTranslations, hideSpinner, showSpinner, updateBreadcrumbs } from '../../actions';
-import apiClient from '../../utils/apiClient';
-import { translateWithDefaultMessage } from '../../utils/Translate';
-import Wizard from '../wizard/Wizard';
-import AddItemsPage from './combined-shipments/AddItemsPage';
-import CreateStockMovement from './combined-shipments/CreateStockMovement';
-import SendMovementPage from './combined-shipments/SendMovementPage';
-import './StockMovement.scss';
+
+import { fetchBreadcrumbsConfig, fetchTranslations, hideSpinner, showSpinner, updateBreadcrumbs } from 'actions';
+import AddItemsPage from 'components/stock-movement-wizard/combined-shipments/AddItemsPage';
+import CreateStockMovement from 'components/stock-movement-wizard/combined-shipments/CreateStockMovement';
+import SendMovementPage from 'components/stock-movement-wizard/combined-shipments/SendMovementPage';
+import Wizard from 'components/wizard/Wizard';
+import apiClient from 'utils/apiClient';
+import { translateWithDefaultMessage } from 'utils/Translate';
+
+import 'components/stock-movement-wizard/StockMovement.scss';
 
 /** Main combined shipments stock movement form's wizard component. */
 class StockMovementCombinedShipments extends Component {
@@ -68,23 +70,41 @@ class StockMovementCombinedShipments extends Component {
 
   getWizardTitle() {
     const { values } = this.state;
-    let newName = '';
     if (!values.movementNumber && !values.trackingNumber) {
       return '';
     }
-    if (values.movementNumber && values.name && !values.trackingNumber) {
-      newName = values.description;
-    }
-    if (values.trackingNumber) {
-      const {
-        origin, destination, dateShipped, stocklist, trackingNumber, description,
-      } = values;
-      const stocklistPart = stocklist && stocklist.name ? `${stocklist.name}.` : '';
-      const dateReq = moment(dateShipped, 'MM/DD/YYYY').format('DDMMMYYYY');
-      newName = `${origin.name}.${destination.name}.${dateReq}.${stocklistPart}${trackingNumber}.${description}`;
-      newName.replace(/ /gi, '');
-    }
-    return `${values.movementNumber} - ${newName}`;
+    return [
+      {
+        text: 'Stock Movement',
+        color: '#000000',
+        delimeter: ' | ',
+      },
+      {
+        text: values.movementNumber,
+        color: '#000000',
+        delimeter: ' - ',
+      },
+      {
+        text: values.origin.name,
+        color: '#004d40',
+        delimeter: ' to ',
+      },
+      {
+        text: values.destination.name,
+        color: '#01579b',
+        delimeter: ', ',
+      },
+      {
+        text: values.dateRequested,
+        color: '#4a148c',
+        delimeter: ', ',
+      },
+      {
+        text: values.description,
+        color: '#770838',
+        delimeter: '',
+      },
+    ];
   }
 
   getAdditionalWizardTitle() {
@@ -153,7 +173,7 @@ class StockMovementCombinedShipments extends Component {
               id: resp.origin.id,
               type: originType ? originType.locationTypeCode : null,
               name: resp.origin.name,
-              label: `${resp.origin.name} [${originType ? originType.description : null}]`,
+              label: `${resp.origin.organizationCode ? `${resp.origin.organizationCode} - ` : ''}${resp.origin.name}`,
             },
             destination: {
               id: resp.destination.id,

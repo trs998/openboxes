@@ -13,8 +13,15 @@ import org.apache.commons.collections.FactoryUtils
 import org.apache.commons.collections.list.LazyList
 import org.apache.commons.lang.NotImplementedException
 import org.grails.plugins.web.taglib.ApplicationTagLib
+import org.hibernate.Criteria
 import org.pih.warehouse.auth.AuthService
-import org.pih.warehouse.core.*
+import org.pih.warehouse.core.Document
+import org.pih.warehouse.core.GlAccount
+import org.pih.warehouse.core.Location
+import org.pih.warehouse.core.Synonym
+import org.pih.warehouse.core.Tag
+import org.pih.warehouse.core.UnitOfMeasure
+import org.pih.warehouse.core.User
 import org.pih.warehouse.inventory.Inventory
 import org.pih.warehouse.inventory.InventoryItem
 import org.pih.warehouse.inventory.InventoryLevel
@@ -134,6 +141,8 @@ class Product implements Comparable, Serializable {
     // http://docs.oracle.com/cd/A60725_05/html/comnls/us/inv/lotcntrl.htm
     Boolean lotControl = Boolean.TRUE
 
+    Boolean lotAndExpiryControl = Boolean.FALSE
+
     // Used to indicate that the product is an essential med (as defined by the WHO, MSPP, or PIH).
     // WHO Model Lists of Essential Medicines - http://www.who.int/medicines/publications/essentialmedicines/en/
     Boolean essential = Boolean.TRUE
@@ -223,18 +232,19 @@ class Product implements Comparable, Serializable {
     User createdBy
     User updatedBy
 
-    String productColor
+    String color
 
-    static transients = ["rootCategory",
+    static transients = ["associations",
+                         "rootCategory",
                          "categoriesList",
                          "images",
                          "genericProduct",
                          "thumbnail",
                          "binLocation",
                          "substitutions",
-                         "color",
                          "applicationTagLib",
-                         "handlingIcons"
+                         "handlingIcons",
+                         "uoms"
     ]
 
     static hasMany = [
@@ -249,7 +259,8 @@ class Product implements Comparable, Serializable {
             inventoryItems     : InventoryItem,
             productComponents  : ProductComponent,
             productSuppliers   : ProductSupplier,
-            productCatalogItems: ProductCatalogItem
+            productCatalogItems: ProductCatalogItem,
+            productAvailabilities: ProductAvailability
     ]
 
     static mapping = {
@@ -263,7 +274,7 @@ class Product implements Comparable, Serializable {
         synonyms cascade: 'all-delete-orphan', sort: 'name'
         productSuppliers cascade: 'all-delete-orphan'//, sort: 'dateCreated'
         productComponents cascade: "all-delete-orphan"
-        productColor(formula: '(select max(pc.color) from product_catalog_item pci left outer join product_catalog pc on pci.product_catalog_id = pc.id where pci.product_id = id group by pci.product_id)')
+        color(formula: '(select max(pc.color) from product_catalog_item pci left outer join product_catalog pc on pci.product_catalog_id = pc.id where pci.product_id = id group by pci.product_id)')
     }
 
     static mappedBy = [productComponents: "assemblyProduct"]
@@ -282,6 +293,7 @@ class Product implements Comparable, Serializable {
         hazardousMaterial(nullable: true)
         serialized(nullable: true)
         lotControl(nullable: true)
+        lotAndExpiryControl(nullable: true)
         essential(nullable: true)
 
         defaultUom(nullable: true)
@@ -305,7 +317,7 @@ class Product implements Comparable, Serializable {
         createdBy(nullable: true)
         updatedBy(nullable: true)
         glAccount(nullable: true)
-        productColor(nullable: true)
+        color(nullable: true)
     }
 
     /**
@@ -366,6 +378,9 @@ class Product implements Comparable, Serializable {
         return productGroups ? productGroups?.sort()?.first() : null
     }
 
+    List<ProductAssociation> getAssociations() {
+        return ProductAssociation.findAllByProduct(this)
+    }
 
     List<ProductAssociation> getSubstitutions() {
         return ProductAssociation.findAllByProductAndCode(this, ProductAssociationTypeCode.SUBSTITUTE)
@@ -385,11 +400,19 @@ class Product implements Comparable, Serializable {
     }
 
     /**
-     * Get products related to this product through all product groups.
+     * Get substitution products for this product.
      * @return
      */
     Set<Product> alternativeProducts() {
         return substitutions*.associatedProduct
+    }
+
+    /**
+     * Get all associated products for this product.
+     * @return
+     */
+    Set<Product> associatedProducts() {
+        return associations*.associatedProduct
     }
 
     /**
@@ -403,7 +426,9 @@ class Product implements Comparable, Serializable {
             return null
         }
 
-        return attributes.find { ProductAttribute productAttribute -> productAttribute.attribute?.id == attribute?.id }
+        return attributes.find { ProductAttribute productAttribute ->
+            productAttribute.attribute?.id == attribute?.id && !productAttribute.productSupplier
+        }
     }
 
     /**
@@ -451,12 +476,23 @@ class Product implements Comparable, Serializable {
     }
 
     /**
-     * Currently not implement since it would require coupling InventoryService to Product.
+     * Get quantity available to promise for this product given the location
      *
      * @param locationId
      */
-    def getQuantityAvailableToPromise(Integer locationId) {
-        throw new NotImplementedException()
+    def getQuantityAvailableToPromise(String locationId) {
+        def productAvailability = ProductAvailability.createCriteria().list {
+
+            projections {
+                sum("quantityAvailableToPromise", "quantityAvailableToPromise")
+            }
+            location {
+                eq("id", locationId)
+            }
+            eq("product", this)
+        }
+
+        return productAvailability ? productAvailability?.get(0) : 0
     }
 
 
@@ -551,6 +587,23 @@ class Product implements Comparable, Serializable {
         }
     }
 
+    def validateRequiredFields() {
+        if (!productType || !productType?.requiredFields || productType?.requiredFields?.isEmpty()) {
+            return true
+        }
+
+        def isValid = true
+
+        productType.requiredFields.each {
+            if (!this."$it.fieldName") {
+                isValid = false
+                errors.rejectValue(it.fieldName, "default.null.message", [it.fieldName, "Product"] as Object[], "")
+            }
+        }
+
+        return isValid
+    }
+
     /**
      * Converts product catalog association to string.
      *
@@ -619,19 +672,24 @@ class Product implements Comparable, Serializable {
         return handlingIcons
     }
 
+    List getUoms() {
+       return packages.collect { [uom: it.uom.code, quantity: it.quantity] }.unique()
+    }
+
     Map toJson() {
         [
-                id           : id,
-                productCode  : productCode,
-                name         : name,
-                description  : description,
-                category     : category?.toJson(),
-                unitOfMeasure: unitOfMeasure,
-                pricePerUnit : pricePerUnit,
-                dateCreated  : dateCreated,
-                lastUpdated  : lastUpdated,
-                color        : productColor,
-                handlingIcons: handlingIcons
+                id                  : id,
+                productCode         : productCode,
+                name                : name,
+                description         : description,
+                category            : category,
+                unitOfMeasure       : unitOfMeasure,
+                pricePerUnit        : pricePerUnit,
+                dateCreated         : dateCreated,
+                lastUpdated         : lastUpdated,
+                color               : color,
+                handlingIcons       : handlingIcons,
+                lotAndExpiryControl : lotAndExpiryControl,
         ]
     }
 }

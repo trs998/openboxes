@@ -1,16 +1,21 @@
-import _ from 'lodash';
-import PropTypes from 'prop-types';
 import React, { Component } from 'react';
-import 'react-confirm-alert/src/react-confirm-alert.css';
+
+import _ from 'lodash';
+import moment from 'moment';
+import PropTypes from 'prop-types';
 import { getTranslate } from 'react-localize-redux';
 import { connect } from 'react-redux';
-import { fetchTranslations, hideSpinner, showSpinner } from '../../actions';
-import apiClient, { parseResponse } from '../../utils/apiClient';
-import { translateWithDefaultMessage } from '../../utils/Translate';
-import '../stock-movement-wizard/StockMovement.scss';
-import Wizard from '../wizard/Wizard';
-import PartialReceivingPage from './PartialReceivingPage';
-import ReceivingCheckScreen from './ReceivingCheckScreen';
+
+import { fetchTranslations, hideSpinner, showSpinner } from 'actions';
+import PartialReceivingPage from 'components/receiving/PartialReceivingPage';
+import ReceivingCheckScreen from 'components/receiving/ReceivingCheckScreen';
+import Wizard from 'components/wizard/Wizard';
+import apiClient, { parseResponse } from 'utils/apiClient';
+import { translateWithDefaultMessage } from 'utils/Translate';
+
+import 'react-confirm-alert/src/react-confirm-alert.css';
+import 'components/stock-movement-wizard/StockMovement.scss';
+
 
 /** Main partial receiving form's component. */
 class ReceivingPage extends Component {
@@ -69,8 +74,42 @@ class ReceivingPage extends Component {
    */
   getWizardTitle() {
     const { formData } = this.state;
-    const newName = formData.shipment ? `${formData.shipment.shipmentNumber} - ${formData.shipment.name}` : null;
-    return newName;
+    if (!formData.shipment) {
+      return '';
+    }
+    const dateShipped = moment(formData.dateShipped).format('MM/DD/YYYY');
+    return [
+      {
+        text: 'Receiving',
+        color: '#000000',
+        delimeter: ' | ',
+      },
+      {
+        text: formData.shipment.shipmentNumber,
+        color: '#000000',
+        delimeter: ' - ',
+      },
+      {
+        text: formData.origin.name,
+        color: '#004d40',
+        delimeter: ' to ',
+      },
+      {
+        text: formData.destination.name,
+        color: '#01579b',
+        delimeter: ', ',
+      },
+      {
+        text: dateShipped,
+        color: '#4a148c',
+        delimeter: ', ',
+      },
+      {
+        text: formData.description,
+        color: '#770838',
+        delimeter: '',
+      },
+    ];
   }
 
   dataFetched = false;
@@ -103,13 +142,22 @@ class ReceivingPage extends Component {
    */
   fetchBins() {
     const url = `/api/internalLocations/receiving?location.id=${this.state.locationId}&shipmentNumber=${this.state.shipmentNumber}`;
+    const mapBins = bins => (_.chain(bins)
+      .orderBy(['name'], ['asc']).value()
+    );
 
     return apiClient.get(url)
       .then((response) => {
-        const bins = _.map(response.data.data, bin => (
-          { value: { id: bin.id, name: bin.name }, label: bin.name }
-        ));
-        this.setState({ bins }, () => this.props.hideSpinner());
+        const binGroups = _.partition(response.data.data, bin => (bin.zoneName));
+        const binsWithZone = _.chain(binGroups[0]).groupBy('zoneName')
+          .map((value, key) => ({ name: key, options: mapBins(value) }))
+          .orderBy(['label'], ['asc'])
+          .value();
+        const binsWithoutZone = mapBins(binGroups[1]);
+        this.setState(
+          { bins: [...binsWithZone, ...binsWithoutZone] },
+          () => this.props.hideSpinner(),
+        );
       })
       .catch(() => this.props.hideSpinner());
   }

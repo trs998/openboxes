@@ -10,17 +10,16 @@
     <g:if test="${flash.message}">
         <div class="message">${flash.message}</div>
     </g:if>
-
-
     <div class="buttonBar">
-        <g:link class="button icon settings" controller="admin" action="showSettings" fragment="tab-5">${g.message(code:'admin.backToSettings.label', default: 'Back to Settings')}</g:link>
-        <g:link class="button icon log" action="list"><warehouse:message code="default.list.label" args="[g.message(code:'jobKeys.label', default: 'Background Jobs')]"/></g:link>
+        <g:link class="button" controller="admin" action="showSettings" fragment="tab-5">
+            ${g.message(code:'admin.backToSettings.label', default: 'Back to Settings')}
+        </g:link>
+        <g:link class="button" action="list">
+            <warehouse:message code="default.list.label" args="[g.message(code:'jobs.label', default: 'Jobs')]"/>
+        </g:link>
     </div>
-
     <div class="yui-ga">
         <div class="yui-u first">
-
-
             <div class="box dialog">
                 <h2>${jobDetail.key}</h2>
                 <table>

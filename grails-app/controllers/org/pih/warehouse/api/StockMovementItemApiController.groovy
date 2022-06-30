@@ -15,15 +15,11 @@ import org.grails.web.json.JSONObject
 import org.hibernate.ObjectNotFoundException
 import org.pih.warehouse.picklist.PicklistItem
 import org.pih.warehouse.core.Location
-import org.pih.warehouse.inventory.InventoryItem
 import org.pih.warehouse.requisition.RequisitionItem
-import org.pih.warehouse.shipping.Shipment
-import org.pih.warehouse.shipping.ShipmentItem
 
 @Transactional
 class StockMovementItemApiController {
 
-    def inventoryService
     def stockMovementService
 
     def list() {
@@ -34,8 +30,13 @@ class StockMovementItemApiController {
         render([data: stockMovement.lineItems] as JSON)
     }
 
-    def read() {
-        StockMovementItem stockMovementItem = stockMovementService.getStockMovementItem(params.id)
+    def read = {
+        def stockMovementItem = stockMovementService.getStockMovementItem(params.id, params.stepNumber)
+        render([data: stockMovementItem] as JSON)
+    }
+
+    def details = {
+        def stockMovementItem = stockMovementService.getStockMovementItem(params.id, params.stepNumber, true)
         render([data: stockMovementItem] as JSON)
     }
 
@@ -47,7 +48,7 @@ class StockMovementItemApiController {
     def getSubstitutionItems() {
         RequisitionItem requisitionItem = RequisitionItem.load(params.id)
         def location = Location.get(session.warehouse.id)
-        List<SubstitutionItem> substitutionItems = stockMovementService.getAvailableSubstitutions(location, requisitionItem.product)
+        List<SubstitutionItem> substitutionItems = stockMovementService.getAvailableSubstitutions(location, requisitionItem)
         render([data: substitutionItems] as JSON)
     }
 
@@ -57,8 +58,6 @@ class StockMovementItemApiController {
         log.debug "JSON " + jsonObject.toString(4)
         StockMovementItem stockMovementItem = stockMovementService.getStockMovementItem(params.id)
 
-        stockMovementService.removeShipmentItemsForModifiedRequisitionItem(stockMovementItem)
-
         log.debug("Updating picklist items")
         List picklistItems = jsonObject.remove("picklistItems")
         String reasonCode = jsonObject.reasonCode
@@ -66,32 +65,15 @@ class StockMovementItemApiController {
         if (!picklistItems) {
             throw new IllegalArgumentException("Must specifiy picklistItems")
         }
-        picklistItems.each { picklistItemMap ->
 
-            PicklistItem picklistItem = picklistItemMap["id"] ?
-                    PicklistItem.get(picklistItemMap["id"]) : null
+        stockMovementService.removeShipmentItemsForModifiedRequisitionItem(stockMovementItem)
 
-            InventoryItem inventoryItem = picklistItemMap["inventoryItem.id"] ?
-                    InventoryItem.get(picklistItemMap["inventoryItem.id"]) : null
-
-            Location binLocation = picklistItemMap["binLocation.id"] ?
-                    Location.get(picklistItemMap["binLocation.id"]) : null
-
-            BigDecimal quantityPicked = (picklistItemMap.quantityPicked != null && picklistItemMap.quantityPicked != "") ?
-                    new BigDecimal(picklistItemMap.quantityPicked) : null
-
-            String comment = picklistItemMap.comment
-
-            stockMovementService.createOrUpdatePicklistItem(stockMovementItem, picklistItem, inventoryItem, binLocation,
-                    quantityPicked?.intValueExact(), reasonCode, comment)
-        }
+        stockMovementService.updatePicklistItem(stockMovementItem, picklistItems, reasonCode)
 
         RequisitionItem requisitionItem = RequisitionItem.get(params.id)
         stockMovementService.createMissingShipmentItem(requisitionItem)
 
-        PickPageItem pickPageItem = stockMovementService.buildPickPageItem(requisitionItem, stockMovementItem.sortOrder)
-
-        render([data: pickPageItem] as JSON)
+        render status: 200
     }
 
     def createPicklist() {
@@ -100,28 +82,23 @@ class StockMovementItemApiController {
         stockMovementService.removeShipmentItemsForModifiedRequisitionItem(stockMovementItem)
 
         log.debug "Creating picklist for stock movement item ${stockMovementItem}"
-        stockMovementService.createPicklist(stockMovementItem)
+        stockMovementService.createPicklist(stockMovementItem, true)
 
         RequisitionItem requisitionItem = RequisitionItem.get(params.id)
         stockMovementService.createMissingShipmentItem(requisitionItem)
 
-        PickPageItem pickPageItem = stockMovementService.buildPickPageItem(requisitionItem, stockMovementItem.sortOrder)
-
-        render([data: pickPageItem] as JSON)
+        render status: 200
     }
 
     def clearPicklist() {
         StockMovementItem stockMovementItem = stockMovementService.getStockMovementItem(params.id)
 
-        stockMovementService.removeShipmentItemsForModifiedRequisitionItem(stockMovementItem)
+        stockMovementService.removeShipmentAndPicklistItemsForModifiedRequisitionItem(stockMovementItem)
 
         log.debug "Clear picklist for stock movement item ${stockMovementItem}"
         stockMovementService.clearPicklist(stockMovementItem)
 
-        RequisitionItem requisitionItem = RequisitionItem.get(params.id)
-        PickPageItem pickPageItem = stockMovementService.buildPickPageItem(requisitionItem, stockMovementItem.sortOrder)
-
-        render([data: pickPageItem] as JSON)
+        render status: 200
     }
 
     def substituteItem() {
@@ -145,15 +122,18 @@ class StockMovementItemApiController {
 
         stockMovementService.substituteItem(stockMovementItem)
 
-        EditPageItem editPageItem = stockMovementService.buildEditPageItem(stockMovementItem)
+        render status: 200
+    }
 
-        render([data: editPageItem] as JSON)
+        stockMovementService.revertItemAndCreateMissingPicklist(stockMovementItem)
+
+        render status: 200
     }
 
     def revertItem() {
         StockMovementItem stockMovementItem = stockMovementService.getStockMovementItem(params.id)
 
-        stockMovementService.revertItem(stockMovementItem)
+        stockMovementService.removeShipmentAndPicklistItemsForModifiedRequisitionItem(stockMovementItem)
 
         EditPageItem editPageItem = stockMovementService.buildEditPageItem(stockMovementItem)
 
@@ -163,12 +143,24 @@ class StockMovementItemApiController {
     def cancelItem() {
         StockMovementItem stockMovementItem = stockMovementService.getStockMovementItem(params.id)
 
+        stockMovementService.removeShipmentAndPicklistItemsForModifiedRequisitionItem(stockMovementItem)
+
+        RequisitionItem requisitionItem = stockMovementItem.requisitionItem
+
+        log.debug "Item canceled " + requisitionItem.id
+        requisitionItem.cancelQuantity(stockMovementItem.reasonCode, stockMovementItem.comments)
+        requisitionItem.quantityApproved = 0
+
+        requisitionItem.save()
+
+
+
         stockMovementItem = stockMovementService.cancelItem(stockMovementItem)
 
         render([data: stockMovementItem] as JSON)
     }
 
-    def removeItem() {
+    def eraseItem = {
         stockMovementService.removeStockMovementItem(params.id)
         render status: 204
     }

@@ -18,6 +18,10 @@ import org.pih.warehouse.core.Person
 import org.pih.warehouse.core.UnitOfMeasure
 import org.pih.warehouse.core.User
 import org.pih.warehouse.inventory.InventoryItem
+import org.pih.warehouse.invoice.InvoiceItem
+import org.pih.warehouse.invoice.InvoiceType
+import org.pih.warehouse.invoice.InvoiceTypeCode
+import org.pih.warehouse.picklist.PicklistItem
 import org.pih.warehouse.product.Category
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.product.ProductPackage
@@ -25,6 +29,8 @@ import org.pih.warehouse.product.ProductSupplier
 import org.pih.warehouse.shipping.Shipment
 import org.pih.warehouse.shipping.ShipmentItem
 import org.pih.warehouse.shipping.ShipmentStatusCode
+
+import java.text.DecimalFormat
 
 class OrderItem implements Serializable, Comparable<OrderItem> {
 
@@ -72,6 +78,7 @@ class OrderItem implements Serializable, Comparable<OrderItem> {
     static mapping = {
         id generator: 'uuid'
         shipmentItems joinTable: [name: 'order_shipment', key: 'order_item_id']
+        picklistItems cascade: "all-delete-orphan", sort: "id"
     }
 
     static transients = [
@@ -85,21 +92,29 @@ class OrderItem implements Serializable, Comparable<OrderItem> {
             "quantityInShipments",
             "quantityInShipmentsInStandardUom",
             "total",
+            "pendingShipmentItems",
             "shippedShipmentItems",
             "subtotal",
             "totalAdjustments",
             "unitOfMeasure",
+            "invoices",
+            "hasInvoices",
+            "hasPrepaymentInvoice",
+            "hasRegularInvoice",
             // Statuses
             "partiallyFulfilled",
             "completelyFulfilled",
             "completelyReceived",
             "pending",
             "quantityRemainingToShip",
+            "invoiceItems",
+            "quantityInvoiced",
+            "quantityInvoicedInStandardUom"
     ]
 
     static belongsTo = [order: Order, parentOrderItem: OrderItem]
 
-    static hasMany = [orderItems: OrderItem, shipmentItems: ShipmentItem, orderAdjustments: OrderAdjustment]
+    static hasMany = [orderItems: OrderItem, shipmentItems: ShipmentItem, orderAdjustments: OrderAdjustment, picklistItems: PicklistItem]
 
     static constraints = {
         description(nullable: true)
@@ -144,12 +159,22 @@ class OrderItem implements Serializable, Comparable<OrderItem> {
         return shipmentItems ? shipmentItems.size() > 0 : false
     }
 
+    def getPendingShipmentItems() {
+        return order.pendingShipments*.shipmentItems*.findAll { it.orderItemId == this.id }?.flatten()?.toArray()
+    }
+
     def getShippedShipmentItems() {
-        return shipmentItems.findAll { it.shipment.currentStatus >= ShipmentStatusCode.SHIPPED }
+        return shipmentItems.findAll { it.shipment?.currentStatus >= ShipmentStatusCode.SHIPPED }
     }
 
     def hasShippedItems() {
         return shippedShipmentItems?shippedShipmentItems.size()>0:false
+    }
+
+    void refreshPendingShipmentItemRecipients() {
+        pendingShipmentItems.each { ShipmentItem shipmentItem ->
+            shipmentItem.recipient = recipient
+        }
     }
 
     Integer getQuantityInStandardUom() {
@@ -276,12 +301,80 @@ class OrderItem implements Serializable, Comparable<OrderItem> {
         return sortOrder
     }
 
+    List<InvoiceItem> getInvoiceItems() {
+        return InvoiceItem.executeQuery("""
+          SELECT ii
+            FROM InvoiceItem ii
+            LEFT JOIN ii.orderItems oi
+            LEFT JOIN ii.shipmentItems si
+            LEFT JOIN si.orderItems soi
+            WHERE oi.id = :id OR soi.id = :id
+          """, [id: id])
+    }
+
+    Integer getQuantityInvoicedInStandardUom() {
+        return InvoiceItem.executeQuery("""
+          SELECT SUM(ii.quantity)
+            FROM InvoiceItem ii
+            JOIN ii.invoice i
+            JOIN ii.shipmentItems si
+            JOIN si.orderItems oi
+            WHERE oi.id = :id 
+            AND i.datePosted IS NOT NULL
+          """, [id: id])?.first() ?: 0
+    }
+
+    def getInvoices() {
+        return invoiceItems*.invoice.unique()
+    }
+
+    Boolean getHasInvoices() {
+        return !invoices.empty
+    }
+
+    Boolean getHasPrepaymentInvoice() {
+        return invoices.any { it.invoiceType?.code == InvoiceTypeCode.PREPAYMENT_INVOICE }
+    }
+
+    Boolean getHasRegularInvoice() {
+        return invoices.any { it.invoiceType == null || it.invoiceType?.code == InvoiceTypeCode.INVOICE }
+    }
+
+    Integer getQuantityInvoiced() {
+        return quantityInvoicedInStandardUom / quantityPerUom
+    }
+
+    def totalQuantityPicked() {
+        return PicklistItem.findAllByOrderItem(this).sum { it.quantity }
+    }
+
+    def retrievePicklistItems() {
+        def picklistItems = PicklistItem.findAllByOrderItem(this)
+        return picklistItems
+    }
+
+
     Map toJson() {
         return [
                 id           : id,
                 product      : product,
                 quantity     : quantity,
                 shipmentItems: shipmentItems,
+        ]
+    }
+
+    Map toImport() {
+        return [
+                id : id,
+                productCode : product?.productCode,
+                sourceName : productSupplier?.name ?: "",
+                supplierCode: productSupplier?.supplierCode ?: "",
+                manufacturer : productSupplier?.manufacturer?.name ?: "",
+                manufacturerCode : productSupplier?.manufacturerCode ?: "",
+                quantity : quantity.toString(),
+                unitPrice : unitPrice.toString(),
+                unitOfMeasure: unitOfMeasure ?: "",
+                budgetCode: budgetCode?.code ?: "",
         ]
     }
 

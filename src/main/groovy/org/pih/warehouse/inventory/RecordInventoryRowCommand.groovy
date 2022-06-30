@@ -33,7 +33,7 @@ class RecordInventoryRowCommand implements Validateable {
         lotNumber(nullable: true)
         description(nullable: true)
         oldQuantity(nullable: false)
-        newQuantity(nullable: false)
+        newQuantity(nullable: false, min: 0)
         comment(nullable: true)
         error(nullable: true)
     }

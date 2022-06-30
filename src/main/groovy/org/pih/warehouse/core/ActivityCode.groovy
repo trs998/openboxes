@@ -32,6 +32,7 @@ enum ActivityCode {
     CROSS_DOCKING('CROSS_DOCKING'),
     PUTAWAY_STOCK('PUTAWAY_STOCK'),
     PICK_STOCK('PICK_STOCK'),
+    HOLD_STOCK('HOLD_STOCK'),
 
     // Requisition reason codes
     SUBSTITUTE_REQUISITION_ITEM('SUBSTITUTE_REQUISITION_ITEM'),
@@ -48,7 +49,17 @@ enum ActivityCode {
     PARTIAL_RECEIVING('PARTIAL_RECEIVING'),
 
     // Accounting (Budget Code, GL Account)
-    REQUIRE_ACCOUNTING('REQUIRE_ACCOUNTING')
+    REQUIRE_ACCOUNTING('REQUIRE_ACCOUNTING'),
+
+    // Central purchasing
+    ENABLE_CENTRAL_PURCHASING('ENABLE_CENTRAL_PURCHASING'),
+
+    // Submitting requests
+    SUBMIT_REQUEST('SUBMIT_REQUEST'),
+
+    // Dynamic creation
+    DYNAMIC_CREATION('DYNAMIC_CREATION')
+
 
     final String id
 
@@ -75,6 +86,17 @@ enum ActivityCode {
                 PACK_SHIPMENT,
                 PARTIAL_RECEIVING,
                 REQUIRE_ACCOUNTING,
+                ENABLE_CENTRAL_PURCHASING,
+                HOLD_STOCK,
+                SUBMIT_REQUEST,
+                DYNAMIC_CREATION
+        ]
+    }
+
+    static binTrackingList() {
+        [
+                PICK_STOCK,
+                PUTAWAY_STOCK
         ]
     }
 }

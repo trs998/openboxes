@@ -1,21 +1,23 @@
+<%@ page import="org.pih.warehouse.core.EntityTypeCode" %>
 <g:uploadForm controller="batch" action="importData">
     <table>
         <tbody>
             <tr class="prop">
                 <td class="name">
-                    <label><warehouse:message code="inventory.uploadAFileToImport.label"/></label>
+                    <label><warehouse:message code="location.label"/></label>
                 </td>
                 <td class="value">
                     <input name="importFile" type="file" />
+                    <g:hiddenField name="location.id" value="${session.warehouse.id }"/>
                 </td>
             </tr>
 
             <tr class="prop">
                 <td class="name">
-                    <label><warehouse:message code="default.type.label"/></label>
+                    <label><warehouse:message code="default.date.label"/></label>
                 </td>
                 <td class="value">
-                    <div>
+                    <g:jqueryDatePicker id="date" name="date" value="${new Date()}" placeholder="Only required for Inventory imports"/>
                         <label>
                             <g:radio name="importType" value="category" checked="${params.importType=='category'}"/>
                             <warehouse:message code="import.category.label" default="Category"/>
@@ -146,19 +148,18 @@
             </tr>
             <tr class="prop">
                 <td class="name">
-                    <label><warehouse:message code="location.label"/></label>
+                    <label><warehouse:message code="inventory.uploadAFileToImport.label"/></label>
                 </td>
                 <td class="value">
-                    ${session?.warehouse?.name }
-                    <g:hiddenField name="location.id" value="${session.warehouse.id }"/>
+                    <input name="xlsFile" type="file" />
                 </td>
             </tr>
             <tr class="prop">
                 <td class="name">
-                    <label><warehouse:message code="default.date.label"/></label>
+                    <label><warehouse:message code="default.choose.label" default="Choose {0}" args="[g.message(code: 'default.type.label')]"/></label>
                 </td>
                 <td class="value">
-                    <g:jqueryDatePicker id="date" name="date" value="${new Date()}"/>
+                    <table style="width:auto">
                 </td>
             </tr>
         </tbody>
@@ -173,6 +174,7 @@
 
                 </td>
             </tr>
+
         </tfoot>
     </table>
 </g:uploadForm>

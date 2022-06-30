@@ -20,12 +20,15 @@ class InventorySnapshotEventService implements ApplicationListener<InventorySnap
     void onApplicationEvent(InventorySnapshotEvent event) {
         log.info "Application event ${event} has been published"
         if (event?.inventoryItem) {
+            productAvailabilityService.updateProductAvailability(event?.inventoryItem)
             inventorySnapshotService.updateInventorySnapshots(event?.inventoryItem)
         }
-        else if (event?.binLocation) {
+        if (event?.binLocation) {
+            productAvailabilityService.updateProductAvailability(event?.binLocation)
             inventorySnapshotService.updateInventorySnapshots(event?.binLocation)
         }
-        else if (event?.product) {
+        if (event?.product) {
+            productAvailabilityService.updateProductAvailability(event?.product)
             inventorySnapshotService.updateInventorySnapshots(event?.product)
         }
     }

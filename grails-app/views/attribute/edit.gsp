@@ -1,4 +1,4 @@
-<%@ page import="org.pih.warehouse.core.UnitOfMeasureType; org.pih.warehouse.product.Attribute" %>
+<%@ page import="org.pih.warehouse.core.EntityTypeCode; org.pih.warehouse.core.UnitOfMeasureType; org.pih.warehouse.product.Attribute" %>
 <html>
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
@@ -34,6 +34,15 @@
 
 					<table>
 						<tbody>
+                            <tr class="prop">
+                                <td valign="top" class="name">
+                                    <label for="entityTypeCode"><g:message code="attribute.entityTypeCode.label" default="Entity Type" /></label>
+                                </td>
+                                <td valign="top" class="value ${hasErrors(bean: attributeInstance, field: 'entityTypeCode', 'errors')}">
+                                    <g:selectEntityTypeCode name="entityTypeCode" value="${attributeInstance?.entityTypeCode}"
+                                                            noSelection="['':'']" class="chzn-select-deselect"/>
+                                </td>
+                            </tr>
                             <tr class="prop">
                                 <td valign="top" class="name">
                                     <label for="name"><g:message code="default.code.label" default="Code" /></label>

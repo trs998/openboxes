@@ -19,8 +19,6 @@ import org.apache.commons.logging.LogFactory
 
 class LiquibaseUtil {
 
-    private static final log = LogFactory.getLog(this)
-
     static getDatabase() {
         def ctx = Holders.grailsApplication.mainContext
         def dataSource = ctx.getBean("dataSource")

@@ -15,16 +15,17 @@ import grails.validation.ValidationException
 import groovy.xml.Namespace
 import org.hibernate.criterion.CriteriaSpecification
 import org.hibernate.sql.JoinType
+import org.pih.warehouse.auth.AuthService
 import org.pih.warehouse.core.ApiException
 import org.pih.warehouse.core.Constants
-import org.pih.warehouse.core.Organization
+import org.pih.warehouse.core.GlAccount
+import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.Tag
 import org.pih.warehouse.core.UnitOfMeasure
 import org.pih.warehouse.importer.ImportDataCommand
 import util.ReportUtil
 
 import java.text.SimpleDateFormat
-
 /**
  * @author jmiranda*
  */
@@ -35,6 +36,7 @@ class ProductService {
     GrailsApplication grailsApplication
     def identifierService
     def userService
+    def dataService
 
     def getNdcResults(operation, q) {
         def hipaaspaceApiKey = grailsApplication.config.hipaaspace.api.key
@@ -589,6 +591,8 @@ class ProductService {
 
         int rowCount = 1
 
+        Location currentLocation = AuthService?.currentLocation?.get()
+
         // Iterate over each line and either update an existing product or create a new product
         csv.toCsvReader(['skipLines': 1, 'separatorChar': delimiter]).eachLine { tokens ->
 
@@ -596,30 +600,52 @@ class ProductService {
             println "Processing line: " + tokens
             def productId = tokens[0]
             def productCode = tokens[1]
-            def productName = tokens[2]
-            def categoryName = tokens[3]
-            def description = tokens[4]
-            def unitOfMeasure = tokens[5]
-            def productTags = tokens[6]?.split(",")
+            def productTypeName = tokens[2]
+            def productName = tokens[3]
+            def categoryName = tokens[4]
+            def glAccountCode = tokens[5]
+            def description = tokens[6]
+            def unitOfMeasure = tokens[7]
+            def productTags = tokens[8]?.split(",")
             def pricePerUnit
             try {
-                pricePerUnit = tokens[7] ? Float.valueOf(tokens[7]) : null
+                pricePerUnit = tokens[9] ? Float.valueOf(tokens[9]) : null
             } catch (NumberFormatException e) {
-                throw new RuntimeException("Unit price for product '${productCode}' at row ${rowCount} must be a valid decimal (value = '${tokens[7]}')", e)
+                throw new RuntimeException("Unit price for product '${productCode}' at row ${rowCount} must be a valid decimal (value = '${tokens[9]}')", e)
             }
-            def manufacturer = tokens[8]
-            def brandName = tokens[9]
-            def manufacturerCode = tokens[10]
-            def manufacturerName = tokens[11]
-            def vendor = tokens[12]
-            def vendorCode = tokens[13]
-            def vendorName = tokens[14]
-            def coldChain = Boolean.valueOf(tokens[15])
-            def upc = tokens[16]
-            def ndc = tokens[17]
+            def lotAndExpiryControl = Boolean.valueOf(tokens[10])
+            def coldChain = Boolean.valueOf(tokens[11])
+            def controlledSubstance = Boolean.valueOf(tokens[12])
+            def hazardousMaterial = Boolean.valueOf(tokens[13])
+            def reconditioned = Boolean.valueOf(tokens[14])
+            def manufacturer = tokens[15]
+            def brandName = tokens[16]
+            def manufacturerCode = tokens[17]
+            def manufacturerName = tokens[18]
+            def vendor = tokens[19]
+            def vendorCode = tokens[20]
+            def vendorName = tokens[21]
+            def upc = tokens[22]
+            def ndc = tokens[23]
 
             if (!productName) {
                 throw new RuntimeException("Product name cannot be empty at row " + rowCount)
+            }
+            ProductType productType = null
+            if (productTypeName) {
+                productType = ProductType.findByName(productTypeName)
+                if (!productType) {
+                    throw new RuntimeException("Product type with name ${productTypeName} does not exist at row " + rowCount)
+                }
+            }
+
+            if (currentLocation?.accountingRequired && !glAccountCode) {
+                throw new RuntimeException("GL Account code cannot be empty at row " + rowCount)
+            }
+
+            GlAccount glAccount = GlAccount.findByCode(glAccountCode)
+            if (glAccountCode && !glAccount) {
+                throw new RuntimeException("GL Account with code ${glAccountCode} does not exist at row " + rowCount)
             }
 
             def category = findOrCreateCategory(categoryName)
@@ -627,24 +653,30 @@ class ProductService {
 
             // If the identifier is incorrect/missing we should display the ID of the product found using the product code instead of the missing/incorrect product identifier
             def productProperties = [
-                    id              : product?.id ?: productId,
-                    name            : productName,
-                    category        : category,
-                    description     : description,
-                    productCode     : productCode,
-                    upc             : upc,
-                    ndc             : ndc,
-                    coldChain       : coldChain,
-                    tags            : productTags,
-                    unitOfMeasure   : unitOfMeasure,
-                    manufacturer    : manufacturer,
-                    manufacturerCode: manufacturerCode,
-                    brandName       : brandName,
-                    manufacturerName: manufacturerName,
-                    vendor          : vendor,
-                    vendorCode      : vendorCode,
-                    vendorName      : vendorName,
-                    product         : product
+                id                  : product?.id ?: productId,
+                name                : productName,
+                productType         : productType,
+                category            : category,
+                glAccount           : glAccount,
+                description         : description,
+                productCode         : productCode,
+                upc                 : upc,
+                ndc                 : ndc,
+                lotAndExpiryControl : lotAndExpiryControl,
+                coldChain           : coldChain,
+                controlledSubstance : controlledSubstance,
+                hazardousMaterial   : hazardousMaterial,
+                reconditioned       : reconditioned,
+                tags                : productTags,
+                unitOfMeasure       : unitOfMeasure,
+                manufacturer        : manufacturer,
+                manufacturerCode    : manufacturerCode,
+                brandName           : brandName,
+                manufacturerName    : manufacturerName,
+                vendor              : vendor,
+                vendorCode          : vendorCode,
+                vendorName          : vendorName,
+                product             : product
             ]
 
             // If the user-entered unit price is different from the current unit price validate the user is allowed to make the change
@@ -738,26 +770,32 @@ class ProductService {
         def rows = []
         products.each { product ->
             def row = [
-                    Id              : product?.id,
-                    ProductCode     : product.productCode ?: '',
-                    Name            : product.name,
-                    Category        : product?.category?.name,
-                    Description     : product?.description ?: '',
-                    UnitOfMeasure   : product.unitOfMeasure ?: '',
-                    Tags            : product.tagsToString() ?: '',
-                    UnitCost        : hasRoleFinance ? (product.pricePerUnit ?: '') : '',
-                    Manufacturer    : product.manufacturer ?: '',
-                    BrandName       : product.brandName ?: '',
-                    ManufacturerCode: product.manufacturerCode ?: '',
-                    ManufacturerName: product.manufacturerName ?: '',
-                    Vendor          : product.vendor ?: '',
-                    VendorCode      : product.vendorCode ?: '',
-                    VendorName      : product.vendorName ?: '',
-                    ColdChain       : product.coldChain ?: Boolean.FALSE,
-                    UPC             : product.upc ?: '',
-                    NDC             : product.ndc ?: '',
-                    Created         : product.dateCreated ? "${formatDate.format(product.dateCreated)}" : "",
-                    Updated         : product.lastUpdated ? "${formatDate.format(product.lastUpdated)}" : "",
+                Id                  : product?.id,
+                ProductCode         : product.productCode ?: '',
+                ProductType         : product.productType?.name ?: '',
+                Name                : product.name,
+                Category            : product?.category?.name,
+                GLAccount           : product?.glAccount?.code ?: '',
+                Description         : product?.description ?: '',
+                UnitOfMeasure       : product.unitOfMeasure ?: '',
+                Tags                : product.tagsToString() ?: '',
+                UnitCost            : hasRoleFinance ? (product.pricePerUnit ?: '') : '',
+                LotAndExpiryControl : product.lotAndExpiryControl ?: Boolean.FALSE,
+                ColdChain           : product.coldChain ?: Boolean.FALSE,
+                ControlledSubstance : product.controlledSubstance ?: Boolean.FALSE,
+                HazardousMaterial   : product.hazardousMaterial ?: Boolean.FALSE,
+                Reconditioned       : product.reconditioned ?: Boolean.FALSE,
+                Manufacturer        : product.manufacturer ?: '',
+                BrandName           : product.brandName ?: '',
+                ManufacturerCode    : product.manufacturerCode ?: '',
+                ManufacturerName    : product.manufacturerName ?: '',
+                Vendor              : product.vendor ?: '',
+                VendorCode          : product.vendorCode ?: '',
+                VendorName          : product.vendorName ?: '',
+                UPC                 : product.upc ?: '',
+                NDC                 : product.ndc ?: '',
+                Created             : product.dateCreated ? "${formatDate.format(product.dateCreated)}" : "",
+                Updated             : product.lastUpdated ? "${formatDate.format(product.lastUpdated)}" : "",
             ]
 
             if (includeAttributes) {
@@ -787,6 +825,41 @@ class ProductService {
         def category = Category.findByName(categoryName)
         if (!category) {
             category = new Category(parentCategory: rootCategory, name: categoryName)
+            category.save(failOnError: true)
+        }
+        return category
+    }
+
+    /**
+     * Find or create a root category with the given name.
+     *
+     * @param rootCategoryName
+     * @return
+     */
+    Category findOrCreateRootCategory(String rootCategoryName) {
+        def rootCategory = Category.findByName(rootCategoryName)
+
+        if (rootCategory && rootCategory.isRoot) {
+            return rootCategory
+        }
+
+        rootCategory = new Category(parentCategory: null, name: rootCategoryName, isRoot: true)
+        rootCategory.save(failOnError: true)
+
+        return rootCategory
+    }
+
+    /**
+     * Find or create a category with the given name and parent category name.
+     *
+     * @param categoryName
+     * @param parentCategory
+     * @return
+     */
+    Category findOrCreateCategoryWithParentCategory(String categoryName, Category parentCategory) {
+        def category = Category.findByName(categoryName)
+        if (!category) {
+            category = new Category(parentCategory: parentCategory, name: categoryName)
             category.save(failOnError: true)
         }
         return category
@@ -965,11 +1038,11 @@ class ProductService {
      *
      * @return
      */
-    def generateProductIdentifier() {
+    def generateProductIdentifier(ProductType productType) {
         def productCode
 
         try {
-            productCode = identifierService.generateProductIdentifier()
+            productCode = identifierService.generateProductIdentifier(productType)
             if (validateProductIdentifier(productCode)) {
                 return productCode
             }
@@ -978,6 +1051,10 @@ class ProductService {
             log.warn("Error generating unique product code " + e.message, e)
         }
         return productCode
+    }
+
+    def generateProductIdentifier() {
+        return generateProductIdentifier(null)
     }
 
     /**
@@ -1001,7 +1078,7 @@ class ProductService {
         if (product) {
             // Generate product code if it doesn't already exist
             if (!product.productCode) {
-                product.productCode = generateProductIdentifier()
+                product.productCode = generateProductIdentifier(product.productType)
             }
             // Handle tags
             try {
@@ -1113,13 +1190,6 @@ class ProductService {
                         ilike("name", "%" + term)
                         ilike("productCode", term)
                         ilike("description", "%" + term)
-                        ilike("brandName", term)
-                        ilike("manufacturer", term)
-                        ilike("manufacturerCode", term)
-                        ilike("manufacturerName", term)
-                        ilike("vendor", term)
-                        ilike("vendorCode", term)
-                        ilike("vendorName", term)
                         ilike("upc", term)
                         ilike("ndc", term)
                         ilike("unitOfMeasure", term)
@@ -1138,5 +1208,141 @@ class ProductService {
             }
         }
         return results
+    }
+
+    def searchProductDtos(String[] terms) {
+        def query = """
+            select 
+            product.id, 
+            product.name, 
+            product.product_code as productCode, 
+            product.cold_chain as coldChain, 
+            product.controlled_substance as controlledSubstance, 
+            product.hazardous_material as hazardousMaterial, 
+            product.reconditioned,
+            product.lot_and_expiry_control as lotAndExpiryControl,
+            (
+                select max(pc.color) 
+                from product_catalog_item pci 
+                left outer join product_catalog pc on pci.product_catalog_id = pc.id 
+                where pci.product_id = product.id 
+                group by pci.product_id
+            ) as productColor
+            from product """
+
+        if (terms && terms.size() > 0) {
+            query += """
+            left outer join product_supplier 
+                on product.id = product_supplier.product_id
+            left outer join party manufacturer 
+                on product_supplier.manufacturer_id = manufacturer.id 
+                and (${terms.collect { "lower(manufacturer.name) like '${it}%'" }.join(" or ")}) # adding the conditions to join will allow MySQL to optimize the query
+            left outer join party supplier 
+                on product_supplier.supplier_id = supplier.id 
+                and (${terms.collect { "lower(supplier.name) like '${it}%'" }.join(" or ")})
+            left outer join inventory_item 
+                on product.id = inventory_item.product_id 
+                and (${terms.collect { "lower(inventory_item.lot_number) like '${it}%'" }.join(" or ")})
+            where product.active = 1 and (${terms.collect {"""
+                lower(product.name) like '%${it}%' 
+                or lower(product.product_code) like '${it}%' 
+                or lower(product.description) like '%${it}%'
+                or lower(product.upc) like '${it}%' 
+                or lower(product.ndc) like '${it}%'
+                or lower(product.unit_of_measure) like '${it}%' 
+                or lower(product_supplier.name) like '%${it}%' 
+                or lower(product_supplier.code) like '${it}%'
+                or lower(product_supplier.product_code) like '${it}%' 
+                or lower(product_supplier.manufacturer_code) like '${it}%'
+                or lower(product_supplier.manufacturer_name) like '${it}%' 
+                or lower(product_supplier.supplier_code) like '${it}%'
+                or lower(product_supplier.supplier_name) like '${it}%'""" }.join(" or ")}
+                or manufacturer.id is not null  # when the condition is added to the join, we still need to check if there were any results
+                or supplier.id is not null
+                or inventory_item.id is not null)
+            group by product.id, product.name, productCode, coldChain, controlledSubstance, hazardousMaterial, reconditioned, productColor"""
+        } else {
+            query += " where product.active = 1 "
+        }
+
+        def results = dataService.executeQuery(query)
+
+        return results.collect { new ProductSearchDto(it) }
+    }
+
+    def importCategories(String categoryOption) {
+        def enabled = grailsApplication.config.openboxes.configurationWizard.enabled
+
+        if (enabled && categoryOption) {
+            def categoryOptionConfig = grailsApplication.config.openboxes.configurationWizard.categoryOptions[categoryOption]
+
+            if (!categoryOptionConfig) {
+                throw new Exception("There is no category option with the code: ${categoryOption}")
+            }
+
+            if (!categoryOptionConfig.enabled) {
+                return
+            }
+
+            // TODO: get this part working with [classpath:, file://, https://] (currently it does not support classpath)
+            def fileContent = new URL(categoryOptionConfig.fileUrl).getBytes()
+            String csv = new String(fileContent)
+
+            // Find existing root category or create one with the configured root name or the Constants.ROOT_CATEGORY_NAME
+            def rootCategoryName = categoryOptionConfig.rootCategoryName ?: Constants.ROOT_CATEGORY_NAME
+
+            def categoryNameColumnIndex = categoryOptionConfig.categoryNameColumnIndex ?: 0
+            def parentCategoryNameColumnIndex = categoryOptionConfig.parentCategoryNameColumnIndex ?: 1
+
+            importCategoryCsv(csv, rootCategoryName, categoryNameColumnIndex, parentCategoryNameColumnIndex)
+        } else if (enabled && !categoryOption) {
+            // TODO OBDS-86: This is for excel import done by user
+        }
+    }
+
+    def importCategoryCsv(String csv) {
+        importCategoryCsv(csv, Constants.ROOT_CATEGORY_NAME, 0, 1)
+    }
+
+    def importCategoryCsv(String csv, def rootCategoryName, def categoryNameColumnIndex, def parentCategoryNameColumnIndex) {
+        def rootCategory = findOrCreateRootCategory(rootCategoryName)
+
+        def settings = [separatorChar: ',', skipLines: 1]
+        csv.toCsvReader(settings).eachLine { tokens ->
+            def categoryName = tokens[categoryNameColumnIndex]
+            def parentCategoryName = tokens[parentCategoryNameColumnIndex]
+
+            def category
+            if (parentCategoryName.toUpperCase() == rootCategoryName) {
+                category = findOrCreateCategoryWithParentCategory(categoryName, rootCategory)
+            } else {
+                def parentCategory = Category.findByName(parentCategoryName)
+                category = findOrCreateCategoryWithParentCategory(categoryName, parentCategory)
+            }
+        }
+    }
+
+    def importProductsFromConfig(String productOption) {
+        def enabled = grailsApplication.config.openboxes.configurationWizard.enabled
+
+        if (enabled && productOption) {
+            def productOptionConfig = grailsApplication.config.openboxes.configurationWizard.productOptions[productOption]
+
+            if (!productOptionConfig) {
+                throw new Exception("There is no product option with the code: ${productOption}")
+            }
+
+            if (!productOptionConfig.enabled) {
+                return
+            }
+
+            // TODO: get this part working with [classpath:, file://, https://] (currently it does not support classpath)
+            def fileContent = new URL(productOptionConfig.fileUrl).getBytes()
+            String csv = new String(fileContent)
+
+            def products = validateProducts(csv)
+
+            importProducts(products)
+        }
     }
 }

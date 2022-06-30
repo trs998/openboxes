@@ -42,11 +42,12 @@
     <g:render template="/common/fullstory"/>
     <g:render template="/common/hotjar"/>
 
-    <ga:trackPageview />
+    <ga:trackPageview/>
     <r:layoutResources/>
 
     <script src="https://use.fontawesome.com/releases/v5.14.0/js/all.js" data-auto-replace-svg="nest"></script>
 </head>
+
 <body class="yui-skin-sam">
 
 <g:render template="/common/customVariables"/>
@@ -328,7 +329,7 @@
               }
             },
             open: function(event, ui) {
-                $(this).html("Loading...");
+                $(this).html("<div class='loading'></div>");
                 $(this).load(url, function(response, status, xhr) {
                     if (xhr.status !== 200) {
                         $(this).text("");
@@ -627,7 +628,6 @@
         }]);
     </script>
 </g:if>
-<!-- Live Chat -->
 <g:if test="${grailsApplication.config.openboxes.zopim.widget.enabled}">
     <!--Start of Zopim Live Chat Script-->
     <script type="text/javascript">

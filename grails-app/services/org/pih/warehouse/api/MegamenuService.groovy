@@ -52,12 +52,17 @@ class MegamenuService {
     List buildAndTranslateSubsections(List subsections, User user, Location location) {
         def builtSubsections = []
         subsections.each {
-            def role = it.requiredRole
-            if (role && !userService.isUserInRole(user, role)) {
+            def roles = it.requiredRole
+            if (roles && !userService.hasAnyRoles(user, roles)) {
                 return
             }
-            ActivityCode[] activities = it.requiredActivities ?: []
-            if (activities && !location.supportsAny(activities)) {
+            ActivityCode[] activitiesAny = it.requiredActivitiesAny ?: []
+            if (activitiesAny && !location.supportsAny(activitiesAny)) {
+                return
+            }
+
+            ActivityCode[] activitiesAll = it.requiredActivitiesAll ?: []
+            if (activitiesAll && !location.supportsAll(activitiesAll)) {
                 return
             }
             def label = getMessageTagLib().message(code: it.label, default: it.defaultLabel)
@@ -72,12 +77,17 @@ class MegamenuService {
     List buildAndTranslateMenuItems(List menuItems, User user, Location location) {
         def builtMenuItems = []
         menuItems.each {
-            def role = it.requiredRole
-            if (role && !userService.isUserInRole(user, role)) {
+            def roles = it.requiredRole
+            if (roles && !userService.hasAnyRoles(user, roles)) {
                 return
             }
-            ActivityCode[] activities = it.requiredActivities ?: []
-            if (activities && !location.supportsAny(activities)) {
+            ActivityCode[] activitiesAny = it.requiredActivitiesAny ?: []
+            if (activitiesAny && !location.supportsAny(activitiesAny)) {
+                return
+            }
+
+            ActivityCode[] activitiesAll = it.requiredActivitiesAll ?: []
+            if (activitiesAll && !location.supportsAll(activitiesAll)) {
                 return
             }
             def label = getMessageTagLib().message(code: it.label, default: it.defaultLabel)
@@ -99,13 +109,17 @@ class MegamenuService {
     ArrayList buildAndTranslateMenu(Map menuConfig, User user, Location location) {
         def parsedMenuConfig = []
         menuConfig.each { key, value ->
-            def role = value.requiredRole
-            if (role && !userService.isUserInRole(user, role)) {
+            def roles = value.requiredRole
+            if (roles && !userService.hasAnyRoles(user, roles)) {
+                return
+            }
+            ActivityCode[] activitiesAny = value.requiredActivitiesAny ?: []
+            if (activitiesAny && !location.supportsAny(activitiesAny)) {
                 return
             }
 
-            ActivityCode[] activities = value?.requiredActivities?.empty ? value?.requiredActivities : []
-            if (activities && !location.supportsAny(activities)) {
+            ActivityCode[] activitiesAll = value.requiredActivitiesAll ?: []
+            if (activitiesAll && !location.supportsAll(activitiesAll)) {
                 return
             }
             if (value.enabled) {

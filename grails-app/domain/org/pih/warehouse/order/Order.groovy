@@ -10,8 +10,12 @@
 package org.pih.warehouse.order
 
 import grails.util.Holders
+import org.pih.warehouse.api.StockMovementDirection
 import org.pih.warehouse.auth.AuthService
 import org.pih.warehouse.core.*
+import org.pih.warehouse.invoice.InvoiceItem
+import org.pih.warehouse.invoice.InvoiceTypeCode
+import org.pih.warehouse.picklist.Picklist
 import org.pih.warehouse.shipping.Shipment
 import org.pih.warehouse.shipping.ShipmentStatusCode
 
@@ -34,7 +38,7 @@ class Order implements Serializable {
 
     String id
     OrderStatus status = OrderStatus.PENDING
-    OrderTypeCode orderTypeCode
+    OrderType orderType
     String name
     String description        // a user-defined, searchable name for the order
     String orderNumber        // an auto-generated shipment number
@@ -73,7 +77,7 @@ class Order implements Serializable {
             "isApprovalRequired",
             "displayStatus",
             "orderedOrderItems",
-            "pendingShipment",
+            "pendingShipments",
             "receivedOrderItems",
             "shipments",
             "shippedOrderItems",
@@ -83,14 +87,30 @@ class Order implements Serializable {
             "totalOrderItemAdjustments",
             "total",
             "totalNormalized",
+            "invoices",
+            "hasInvoice",
+            "invoiceItems",
+            "hasPrepaymentInvoice",
+            "hasRegularInvoice",
+            "hasActiveItemsOrAdjustments",
+            "isPrepaymentInvoiceAllowed",
+            "isPrepaymentRequired",
+            "canGenerateInvoice",
+            "isPurchaseOrder",
+            "isReturnOrder",
+            "isPutawayOrder",
+            "isReturnOrder",
+            "isTransferOrder",
             // Statuses
             "pending",
             "placed",
+            "shipped",
             "partiallyReceived",
             "received",
             "canceled",
             "completed",
-
+            'activeOrderAdjustments',
+            'activeOrderItems'
     ]
 
     static hasMany = [
@@ -100,6 +120,7 @@ class Order implements Serializable {
             events: Event,
             orderAdjustments: OrderAdjustment,
     ]
+    static hasOne = [picklist: Picklist]
     static mapping = {
         id generator: 'uuid'
         table "`order`"
@@ -111,18 +132,18 @@ class Order implements Serializable {
 
     static constraints = {
         status(nullable: true)
-        orderTypeCode(nullable: false)
+        orderType(nullable: false)
         name(nullable: false)
         description(nullable: true, maxSize: 255)
         orderNumber(nullable: true, maxSize: 255, unique: true)
         currencyCode(nullable:true)
         exchangeRate(nullable:true)
         origin(nullable: false, validator: { Location origin, Order obj ->
-            return !origin?.organization ? ['validator.organization.required'] : true
+            return !origin.isWard() && !origin?.organization ? ['validator.organization.required'] : true
         })
         originParty(nullable:true)
         destination(nullable: false, validator: { Location destination, Order obj ->
-            return !destination?.organization ? ['validator.organization.required'] : true
+            return !destination.isWard() && !destination?.organization ? ['validator.organization.required'] : true
         })
         destinationParty(nullable:true)
         recipient(nullable: true)
@@ -134,6 +155,7 @@ class Order implements Serializable {
         dateCompleted(nullable: true)
         paymentMethodType(nullable: true)
         paymentTerm(nullable: true)
+        picklist(nullable: true)
         dateCreated(nullable: true)
         lastUpdated(nullable: true)
         createdBy(nullable: true)
@@ -151,6 +173,10 @@ class Order implements Serializable {
         for (ShipmentStatusCode statusCode in
                 [ShipmentStatusCode.RECEIVED, ShipmentStatusCode.PARTIALLY_RECEIVED, ShipmentStatusCode.SHIPPED]) {
             if (shipments.any { Shipment shipment -> shipment?.currentStatus == statusCode}) {
+                if (ShipmentStatusCode.RECEIVED == statusCode && hasRegularInvoice) {
+                    return OrderStatus.COMPLETED
+                }
+
                 return statusCode
             }
         }
@@ -184,6 +210,18 @@ class Order implements Serializable {
                 destination?.supports(ActivityCode.APPROVE_ORDER)) && total > minimumAmount
     }
 
+    StockMovementDirection getStockMovementDirection(Location currentLocation) {
+        if (origin == destination) {
+            return StockMovementDirection.INTERNAL
+        } else if (currentLocation == origin) {
+            return StockMovementDirection.OUTBOUND
+        } else if (currentLocation == destination || origin?.isSupplier()) {
+            return StockMovementDirection.INBOUND
+        } else {
+            return null
+        }
+    }
+
 
     /**
      * @return a boolean indicating whether the order is pending
@@ -197,6 +235,13 @@ class Order implements Serializable {
      */
     Boolean isPlaced() {
         return (status == OrderStatus.PLACED)
+    }
+
+    /**
+     * @return a boolean indicating whether the order has been fully shipped
+     */
+    Boolean isShipped() {
+        return activeOrderItems?.every { OrderItem orderItem -> orderItem.isCompletelyFulfilled() }
     }
 
     /**
@@ -233,12 +278,9 @@ class Order implements Serializable {
         return shipments.findAll { Shipment shipment -> shipment.currentStatus == statusCode }
     }
 
-    Shipment getPendingShipment() {
+    List getPendingShipments() {
         def pendingShipments = getShipmentsByStatus(ShipmentStatusCode.PENDING)
-        if (pendingShipments.size() > 1) {
-            throw new IllegalStateException("An order can only have one pending shipment")
-        }
-        pendingShipments ? pendingShipments?.first() : null
+        pendingShipments ? pendingShipments : null
     }
 
 
@@ -323,6 +365,108 @@ class Order implements Serializable {
         return name
     }
 
+    /**
+     * Should only use in the context of displaying a single order (i.e. do not invoke on a list of orders).
+     *
+     * @return true list of invoice items for all order items and order adjustments
+     */
+    List<InvoiceItem> getInvoiceItems() {
+        def invoiceItems = []
+        orderAdjustments?.each {
+            invoiceItems += it.invoiceItems
+        }
+        orderItems?.each {
+            invoiceItems += it.invoiceItems
+        }
+        return invoiceItems
+    }
+
+
+    /**
+     * Should only use in the context of displaying a single order (i.e. do not invoke on a list of orders).
+     *
+     * @return list of all invoices for order
+     */
+    def getInvoices() {
+        return invoiceItems*.invoice.unique()
+    }
+
+    /**
+     * Should only use in the context of displaying a single order (i.e. do not invoke on a list of orders).
+     *
+     * @return true if order has an invoice; false otherwise
+     */
+    Boolean getHasInvoice() {
+        return !invoices.empty
+    }
+
+    /**
+     * Should only use in the context of displaying a single order (i.e. do not invoke on a list of orders).
+     *
+     * @return true if order has a prepayment invoice; false otherwise
+     */
+    Boolean getHasPrepaymentInvoice() {
+        return invoices.any { it.invoiceType?.code == InvoiceTypeCode.PREPAYMENT_INVOICE }
+    }
+
+    /**
+     * Should only use in the context of displaying a single order (i.e. do not invoke on a list of orders).
+     *
+     * @return true if order has a regular invoice; false otherwise
+     */
+    Boolean getHasRegularInvoice() {
+        return invoices.any { it.invoiceType == null || it.invoiceType?.code == InvoiceTypeCode.INVOICE }
+    }
+
+    Boolean getHasActiveItemsOrAdjustments() {
+        return activeOrderItems || activeOrderAdjustments
+    }
+
+    Boolean getIsPrepaymentRequired() {
+        return paymentTerm?.prepaymentPercent > 0
+    }
+
+    Boolean getIsPrepaymentInvoiceAllowed() {
+        return !hasInvoice && isPrepaymentRequired && hasActiveItemsOrAdjustments
+    }
+
+    Boolean getCanGenerateInvoice() {
+        return hasPrepaymentInvoice && isShipped() && !hasRegularInvoice
+    }
+
+    def getActiveOrderItems() {
+        return orderItems.findAll { it.orderItemStatusCode != OrderItemStatusCode.CANCELED }
+    }
+
+    def getActiveOrderAdjustments() {
+        return orderAdjustments.findAll {!it.canceled }
+    }
+
+    Boolean getIsPurchaseOrder() {
+        return orderType?.isPurchaseOrder()
+    }
+
+    Boolean getIsReturnOrder() {
+        return orderType?.isReturnOrder()
+    }
+
+    Boolean getIsPutawayOrder() {
+        return orderType?.isPutawayOrder()
+    }
+
+    Boolean getIsTransferOrder() {
+        return orderType?.isTransferOrder()
+    }
+
+    // isInbound is temporary distinction between outbound and inbound used only for Outbound and Inbound Returns
+    Boolean isInbound(Location currentLocation) {
+        return isReturnOrder && destination == currentLocation && origin != currentLocation
+    }
+
+    // isOutbound is temporary distinction between outbound and inbound used only for Outbound and Inbound Returns
+    Boolean isOutbound(Location currentLocation) {
+        return isReturnOrder && origin == currentLocation && destination != currentLocation
+    }
 
     Map toJson() {
         return [

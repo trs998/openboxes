@@ -1,11 +1,19 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import ReactTable from 'react-table';
+
+import _ from 'lodash';
 import PropTypes from 'prop-types';
-import Alert from 'react-s-alert';
-import { getTranslate } from 'react-localize-redux';
 import { confirmAlert } from 'react-confirm-alert';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import Alert from 'react-s-alert';
+import ReactTable from 'react-table';
+
+import { hideSpinner, showSpinner } from 'actions';
+import apiClient, { flattenRequest } from 'utils/apiClient';
+import customTreeTableHOC from 'utils/CustomTreeTable';
+import Filter from 'utils/Filter';
+import showLocationChangedAlert from 'utils/location-change-alert';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-table/react-table.css';
 import 'react-confirm-alert/src/react-confirm-alert.css';
@@ -148,8 +156,14 @@ class PutAwayCheckPage extends Component {
       Filter,
     }, {
       Header: <Translate id="react.putAway.preferredBin.label" defaultMessage="Preferred bin" />,
-      accessor: 'preferredBin.name',
+      accessor: 'preferredBin',
       style: { whiteSpace: 'normal' },
+      Cell: props => (
+        <div>
+          {props.value && props.value.zoneName ? <div>{props.value.zoneName}:&nbsp;</div> : ''}
+          <div>{props.value ? props.value.name : ''}</div>
+        </div>
+      ),
       Filter,
     }, {
       Header: <Translate id="react.putAway.currentBin.label" defaultMessage="Current bin" />,
@@ -158,8 +172,14 @@ class PutAwayCheckPage extends Component {
       Filter,
     }, {
       Header: <Translate id="react.putAway.putAwayBin.label" defaultMessage="Putaway Bin" />,
-      accessor: 'putawayLocation.name',
+      accessor: 'putawayLocation',
       style: { whiteSpace: 'normal' },
+      Cell: props => (
+        <div>
+          {props.value && props.value.zoneName ? <div>{props.value.zoneName}:&nbsp;</div> : ''}
+          <div>{props.value ? props.value.name : ''}</div>
+        </div>
+      ),
       Filter,
     }, {
       Header: <Translate id="react.putAway.stockMovement.label" defaultMessage="Stock Movement" />,
@@ -244,7 +264,7 @@ class PutAwayCheckPage extends Component {
       .then(() => {
         this.props.hideSpinner();
         Alert.success(this.props.translate('react.putAway.alert.putAwayCompleted.label', 'Putaway was successfully completed!'), { timeout: 3000 });
-        this.goToFirstPage();
+        window.location = `/openboxes/order/show/${this.props.initialValues.putAway.id}`;
       })
       .catch(() => this.props.hideSpinner());
   }

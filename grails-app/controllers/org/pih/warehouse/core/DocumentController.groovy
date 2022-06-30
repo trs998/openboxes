@@ -17,21 +17,27 @@ import groovy.text.Template
 //import groovyx.net.http.HTTPBuilder
 import org.grails.gsp.GroovyPagesTemplateEngine
 import org.pih.warehouse.inventory.InventoryItem
+import org.pih.warehouse.invoice.Invoice
 import org.pih.warehouse.order.Order
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.requisition.Requisition
 import org.pih.warehouse.shipping.Shipment
+import org.pih.warehouse.shipping.ShipmentWorkflow
 import org.springframework.web.multipart.MultipartFile
 import util.FileUtil
 import org.pih.warehouse.core.Constants
 
+import static org.springframework.util.StringUtils.stripFilenameExtension
+
 @Transactional
 class DocumentController {
 
+    def documentTemplateService
     def fileService
     GrailsApplication grailsApplication
     GroovyPagesTemplateEngine groovyPagesTemplateEngine
 
+    def shipmentService
 
     static allowedMethods = [save: "POST", update: "POST", delete: "POST"]
 
@@ -184,6 +190,7 @@ class DocumentController {
         def orderInstance = Order.get(command.orderId)
         def requestInstance = Requisition.get(command.requestId)
         def productInstance = Product.get(command.productId)
+        def invoiceInstance = Invoice.get(command.invoiceId)
 
         // file must not be empty and must be less than 10MB
         // FIXME The size limit needs to go somewhere
@@ -219,6 +226,9 @@ class DocumentController {
                 } else if (productInstance) {
                     productInstance.addToDocuments(documentInstance).save(flush: true)
                     flash.message = "${warehouse.message(code: 'document.succesfullyUpdatedDocument.message')}"
+                } else if (invoiceInstance) {
+                    invoiceInstance.addToDocuments(documentInstance).save(flush: true)
+                    flash.message = "${warehouse.message(code: 'document.successfullySavedToInvoice.message', args: [invoiceInstance?.name])}"
                 }
             }
             // If there are errors, we need to redisplay the document form
@@ -240,6 +250,10 @@ class DocumentController {
                 } else if (productInstance) {
                     redirect(controller: "product", action: "edit", id: productInstance.id)
                     return
+                } else if (invoiceInstance) {
+                    redirect(controller: "invoice", action: "addDocument", id: invoiceInstance.id,
+                            model: [invoiceInstance: invoiceInstance, documentInstance: documentInstance])
+                    return
                 }
             }
         } else {
@@ -256,6 +270,9 @@ class DocumentController {
                 return
             } else if (productInstance) {
                 redirect(controller: 'product', action: 'edit', id: command.productId)
+                return
+            } else if (invoiceInstance) {
+                redirect(controller: 'invoice', action: 'show', id: command.invoiceId)
                 return
             }
         }
@@ -274,6 +291,9 @@ class DocumentController {
             return
         } else if (productInstance) {
             redirect(controller: 'product', action: 'edit', id: command.productId)
+            return
+        } else if (invoiceInstance) {
+            redirect(controller: 'invoice', action: 'show', id: command.invoiceId)
             return
         }
     }
@@ -376,6 +396,40 @@ class DocumentController {
         }
     }
 
+    def renderInvoiceTemplate = {
+        Shipment shipmentInstance = Shipment.get(params.shipmentId)
+
+        if (!shipmentInstance) {
+            throw new Exception("Unable to locate shipment with ID ${params.id}")
+        }
+
+        // If we get the id of document, then render it otherwise find invoice template on shipment workflow
+        Document documentInstance
+        if (params.id) {
+            documentInstance = Document.get(params.id)
+        } else {
+            ShipmentWorkflow shipmentWorkflow = shipmentService.getShipmentWorkflow(shipmentInstance)
+            documentInstance = shipmentWorkflow.documentTemplates?.find {it.documentType?.documentCode == DocumentCode.INVOICE_TEMPLATE}
+        }
+
+        if (!documentInstance) {
+            throw new Exception("Unable to locate document with type ${DocumentCode.INVOICE_TEMPLATE}. Please add ${DocumentCode.INVOICE_TEMPLATE} document to shipment workflow.")
+        }
+
+        try {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream()
+            documentTemplateService.renderInvoiceTemplate(documentInstance, shipmentInstance, outputStream)
+            response.setHeader("Content-disposition",
+                "attachment; filename=\"${stripFilenameExtension(documentInstance.filename)}-${shipmentInstance.shipmentNumber}.${documentInstance.extension}\"")
+            response.setContentType(documentInstance.contentType)
+            outputStream.writeTo(response.outputStream)
+            response.outputStream.flush()
+        } catch (Exception e) {
+            log.error("Unable to render document template ${documentInstance.name} for shipment ${shipmentInstance?.id}", e)
+            throw e
+        }
+    }
+
     /**
      * Saves changes to document metadata (or, more specifically, saves changes to metadata--type,name,documentNumber--associated with
      * a document without modifying the document itself--the upload method handles this)
@@ -412,6 +466,8 @@ class DocumentController {
                 redirect(controller: 'shipment', action: 'showDetails', id: command.shipmentId)
             } else if (command.orderId) {
                 redirect(controller: 'order', action: 'show', id: command.orderId)
+            } else if (command.invoiceId) {
+                redirect(controller: 'invoice', action: 'show', id: command.invoiceId)
             }
         } else {
             if (command.shipmentId) {
@@ -420,6 +476,10 @@ class DocumentController {
             } else if (command.orderId) {
                 redirect(controller: "order", action: "addDocument", id: command.orderId,
                         model: [orderInstance: Order.get(command.orderId), documentInstance: documentInstance])
+
+            } else if (command.invoiceId) {
+                redirect(controller: "invoice", action: "addDocument", id: command.invoiceId,
+                        model: [invoiceInstance: Invoice.get(command.invoiceId), documentInstance: documentInstance])
 
             }
         }
@@ -520,6 +580,7 @@ class DocumentController {
 class DocumentCommand implements Validateable {
     String name
     String typeId
+    String invoiceId
     String orderId
     String productId
     String requestId

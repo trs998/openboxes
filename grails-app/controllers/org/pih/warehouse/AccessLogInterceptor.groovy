@@ -8,14 +8,33 @@ package org.pih.warehouse
  * the terms of this license.
  * You must not remove this notice, or any other, from this software.
  **/
+package org.pih.warehouse.product
+
+import org.pih.warehouse.core.EntityTypeCode
+
+
 class AccessLogInterceptor {
 
-    AccessLogInterceptor() {
-        matchAll().except(uri: "/static/**")
-    }
+    def scaffold = ProductAttribute
+    def dataService
+    def documentService
 
+    def exportProductAttribute = {
+        def entityTypeCode = params.entityTypeCode ? params.entityTypeCode as EntityTypeCode : null
+        def isEntitySupplier = entityTypeCode == EntityTypeCode.PRODUCT_SUPPLIER
+        def productAttributes = ProductAttribute.createCriteria().list {
+            if (isEntitySupplier) {
+                isNotNull("productSupplier")
+            } else {
+                isNull("productSupplier")
+            }
+        }
+
+        def filename = isEntitySupplier ? "productSourceAttribute" : "productAttributes"
+        def data = productAttributes ? dataService.transformObjects(productAttributes, isEntitySupplier ? ProductAttribute.SUPPLIER_PROPERTIES : ProductAttribute.PROPERTIES) : [[:]]
     boolean before() {
-        log.debug("${request.requestURI} [user:${session?.user?.username}, location:${session?.warehouse?.name}]")
-        return true;
+        response.contentType = "application/vnd.ms-excel"
+        response.setHeader("Content-disposition", "attachment; filename=\"${filename}.xls\"")
+        documentService.generateExcel(response.outputStream, data)
     }
 }

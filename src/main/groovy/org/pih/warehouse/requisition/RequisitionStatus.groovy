@@ -25,6 +25,9 @@ enum RequisitionStatus {
     CANCELED(9),
     DELETED(10),
     ERROR(11),
+    // for Outbound Stock Movement mapping
+    DISPATCHED(0),
+    REQUESTED(0),
     // Removed
     OPEN(0),
     FULFILLED(0),
@@ -82,6 +85,8 @@ enum RequisitionStatus {
                 return StockMovementStatusCode.PACKED
             case RequisitionStatus.ISSUED:
                 return StockMovementStatusCode.DISPATCHED
+            case null:
+                return StockMovementStatusCode.REQUESTING
             default:
                 return StockMovementStatusCode.valueOf(requisitionStatus.toString())
         }

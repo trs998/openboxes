@@ -29,9 +29,9 @@ class InventoryItem implements Serializable {
 
     def publishPersistenceEvent = {
         Holders.grailsApplication.mainContext.publishEvent(new InventorySnapshotEvent(this))
+        publishEvent(new RefreshProductAvailabilityEvent(this))
     }
 
-    def afterInsert = publishPersistenceEvent
     def afterUpdate = publishPersistenceEvent
     def afterDelete = publishPersistenceEvent
 
@@ -41,6 +41,7 @@ class InventoryItem implements Serializable {
     Product product                        // Product that we're tracking
     String lotNumber                        // Lot information for a product
     Date expirationDate
+    LotStatusCode lotStatus
 
     String comments
 
@@ -48,11 +49,13 @@ class InventoryItem implements Serializable {
     Integer quantityOnHand
     Integer quantityAvailableToPromise
 
+    Boolean disableRefresh = Boolean.FALSE
+
     // Auditing
     Date dateCreated
     Date lastUpdated
 
-    static transients = ['quantity', 'quantityOnHand', 'quantityAvailableToPromise', 'expirationStatus']
+    static transients = ['quantity', 'quantityOnHand', 'quantityAvailableToPromise', 'expirationStatus', 'associatedProducts', 'disableRefresh', 'recalled', 'pickable']
 
     static belongsTo = [product: Product]
 
@@ -67,6 +70,7 @@ class InventoryItem implements Serializable {
         lotNumber(nullable: true, unique: ['product'], maxSize: 255)
         expirationDate(shared:"expirationDateConstraint")
         comments(nullable: true)
+        lotStatus(nullable: true)
     }
 
     Map toJson() {
@@ -78,7 +82,8 @@ class InventoryItem implements Serializable {
                 "expirationDate" : expirationDate?.format("MM/dd/yyyy"),
                 "quantityOnHand" : quantity ?: 0,
                 "quantityATP"    : quantity ?: 0,       //todo: quantity available to promise will coming soon
-                "expires"        : expirationStatus
+                "expires"        : expirationStatus,
+                "lotStatus"      : lotStatus
         ]
     }
 
@@ -125,4 +130,15 @@ class InventoryItem implements Serializable {
         return "never"
     }
 
+    def getAssociatedProducts() {
+        return [product?.id]
+    }
+
+    Boolean isRecalled() {
+        return lotStatus == LotStatusCode.RECALLED
+    }
+
+    Boolean isPickable() {
+        return !recalled
+    }
 }

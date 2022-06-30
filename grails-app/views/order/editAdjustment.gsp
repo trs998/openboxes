@@ -31,8 +31,7 @@
 				<h2><warehouse:message code="order.orderAjustments.label" default="Order Adjustments"/></h2>
 				<g:form name="orderAdjustmentForm" action="saveAdjustment">
 					<g:hiddenField name="id" value="${orderAdjustment?.id}" />
-					<g:hiddenField id="isAccountingRequired" name="isAccountingRequired"
-								   value="${orderInstance?.destination?.isAccountingRequired()}">
+					<g:hiddenField id="isAccountingRequired" name="isAccountingRequired" value="${isAccountingRequired}">
 					</g:hiddenField>
 					<table>
 						<tbody>
@@ -67,7 +66,7 @@
 							<tr class="prop">
 								<td valign="top" class="name"><label><warehouse:message code="default.description.label"/></label></td>
 								<td valign="top" class="value ${hasErrors(bean: orderAdjustment, field: 'description', 'errors')}">
-									<g:textField name="description" class="large text" value="${orderAdjustment.description}"/>
+									<g:textField name="description" id="description" class="large text" value="${orderAdjustment.description}"/>
 								</td>
 							</tr>
 							<tr class="prop">
@@ -114,10 +113,14 @@
 <script type="text/javascript">
 	function validateForm() {
 		var budgetCode = $("#budgetCode").val();
+		var description = $("#description").val();
 		var isAccountingRequired = ($("#isAccountingRequired").val() === "true");
 		if (!budgetCode && isAccountingRequired) {
-			$("#budgetCode").notify("Required")
+			$("#budgetCode").notify("Required");
 			return false
+		} else if (!description) {
+          $("#description").notify("Description required");
+          return false
 		} else {
 			return true
 		}
@@ -135,7 +138,12 @@
 				},
 				error: function(jqXHR, textStatus, errorThrown) {
 					if (jqXHR.responseText) {
-						$.notify(jqXHR.responseText, "error");
+                      try {
+                        let data = JSON.parse(jqXHR.responseText);
+                        $.notify(data.errorMessage, "error");
+                      } catch (e) {
+                        $.notify(jqXHR.responseText, "error");
+                      }
 					} else {
 						$.notify("Error saving adjustment");
 					}

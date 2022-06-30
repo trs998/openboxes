@@ -1,14 +1,29 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import PropTypes from 'prop-types';
-import Dropzone from 'react-dropzone';
-import Alert from 'react-s-alert';
-import { Form } from 'react-final-form';
+
 import arrayMutators from 'final-form-arrays';
-import { getTranslate } from 'react-localize-redux';
-import { confirmAlert } from 'react-confirm-alert';
+import _ from 'lodash';
 import moment from 'moment';
+import PropTypes from 'prop-types';
+import { confirmAlert } from 'react-confirm-alert';
+import Dropzone from 'react-dropzone';
+import { Form } from 'react-final-form';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import Alert from 'react-s-alert';
+
+import { hideSpinner, showSpinner } from 'actions';
+import DocumentButton from 'components/DocumentButton';
+import ArrayField from 'components/form-elements/ArrayField';
+import DateField from 'components/form-elements/DateField';
+import LabelField from 'components/form-elements/LabelField';
+import SelectField from 'components/form-elements/SelectField';
+import TextField from 'components/form-elements/TextField';
+import apiClient from 'utils/apiClient';
+import { renderFormField } from 'utils/form-utils';
+import { debounceLocationsFetch } from 'utils/option-utils';
+import renderHandlingIcons from 'utils/product-handling-icons';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
+import splitTranslation from 'utils/translation-utils';
 
 import 'react-confirm-alert/src/react-confirm-alert.css';
 
@@ -95,6 +110,8 @@ const SHIPMENT_FIELDS = {
     attributes: {
       required: true,
       showValueTooltip: true,
+      valueKey: 'id',
+      labelKey: 'name',
     },
     getDynamicAttr: ({ shipmentTypes, received, showOnly }) => ({
       options: shipmentTypes,
@@ -125,6 +142,17 @@ const SHIPMENT_FIELDS = {
       disabled: showOnly || received,
     }),
   },
+  expectedDeliveryDate: {
+    type: DateField,
+    label: 'react.stockMovement.expectedDeliveryDate.label',
+    defaultMessage: 'Expected receipt date',
+    attributes: {
+      dateFormat: 'MM/DD/YYYY',
+      required: true,
+      showTimeSelect: false,
+      autoComplete: 'off',
+    },
+  },
 };
 
 const SUPPLIER_FIELDS = {
@@ -140,11 +168,13 @@ const SUPPLIER_FIELDS = {
         type: LabelField,
         label: 'react.stockMovement.packLevel1.label',
         defaultMessage: 'Pack level 1',
+        getDynamicAttr: ({ isPalletNameEmpty }) => ({ hide: isPalletNameEmpty }),
       },
       boxName: {
         type: LabelField,
         label: 'react.stockMovement.packLevel2.label',
         defaultMessage: 'Pack level 2',
+        getDynamicAttr: ({ isBoxNameEmpty }) => ({ hide: isBoxNameEmpty }),
       },
       productCode: {
         type: LabelField,
@@ -156,6 +186,9 @@ const SUPPLIER_FIELDS = {
         label: 'react.stockMovement.product.label',
         defaultMessage: 'Product',
         headerAlign: 'left',
+        getDynamicAttr: ({ isBoxNameEmpty, isPalletNameEmpty }) => ({
+          flexWidth: 12 + (isBoxNameEmpty ? 12 : 0) + (isPalletNameEmpty ? 12 : 0),
+        }),
         attributes: {
           className: 'text-left',
           formatValue: value => (
@@ -267,24 +300,15 @@ class SendMovementPage extends Component {
   dataFetched = false;
 
   saveValues(values) {
-    let payload = {
+    const payload = {
+      'destination.id': values.destination.id,
       dateShipped: values.dateShipped,
-      shipmentType: values.shipmentType,
+      'shipmentType.id': values.shipmentType.id,
       trackingNumber: values.trackingNumber || '',
       driverName: values.driverName || '',
       comments: values.comments || '',
+      expectedDeliveryDate: values.expectedDeliveryDate || '',
     };
-
-    if (values.statusCode === 'DISPATCHED') {
-      payload = {
-        destination: values.destination.id,
-        description: values.description,
-        shipmentType: values.shipmentType,
-        trackingNumber: values.trackingNumber || '',
-        driverName: values.driverName || '',
-        comments: values.comments || '',
-      };
-    }
 
     return this.saveShipment(payload);
   }
@@ -325,7 +349,7 @@ class SendMovementPage extends Component {
         const shipmentTypes = _.map(response.data.data, (type) => {
           const [en, fr] = _.split(type.name, '|fr:');
           return {
-            value: type.id,
+            ...type,
             label: this.props.locale === 'fr' && fr ? fr : en,
           };
         });
@@ -364,7 +388,8 @@ class SendMovementPage extends Component {
               productName: val.productName ? val.productName : val.product.name,
             }),
           );
-          const uniqBy = this.state.values.origin.type === 'SUPPLIER' ? 'id' : 'shipmentItemId';
+
+          const uniqBy = _.find(tableItemsData, 'id') ? 'id' : 'shipmentItemId';
 
           this.setState({
             values: {
@@ -408,10 +433,14 @@ class SendMovementPage extends Component {
           values: {
             ...this.state.values,
             dateShipped: stockMovementData.dateShipped,
-            shipmentType: _.get(stockMovementData, 'shipmentType.id'),
+            shipmentType: {
+              ...stockMovementData.shipmentType,
+              label: splitTranslation(stockMovementData.shipmentType.name, this.props.locale),
+            },
             trackingNumber: stockMovementData.trackingNumber,
             driverName: stockMovementData.driverName,
             comments: stockMovementData.comments,
+            expectedDeliveryDate: stockMovementData.expectedDeliveryDate,
             // Below values are reassigned in case of editing destination or description
             name: stockMovementData.name,
             description: stockMovementData.description,
@@ -492,36 +521,40 @@ class SendMovementPage extends Component {
    * @public
    */
   sendFilesAndSave(values) {
-    this.props.showSpinner();
-    const { files } = this.state;
-    if (files.length > 1) {
-      this.sendFiles(files)
-        .then(() => {
-          Alert.success(this.props.translate('react.stockMovement.alert.filesSuccess.label', 'Files uploaded successfuly!'), { timeout: 3000 });
-          this.removeFiles(_.map(files, file => file.name));
-          this.prepareRequestAndSubmitStockMovement(values);
-        })
-        .catch(() => Alert.error(this.props.translate('react.stockMovement.alert.filesError.label', 'Error occured during files upload!')));
-    } else if (files.length === 1) {
-      this.sendFile(files[0])
-        .then(() => {
-          Alert.success(this.props.translate('react.stockMovement.alert.fileSuccess.label', 'File uploaded successfuly!'), { timeout: 3000 });
-          this.removeFile(files[0].name);
-          this.prepareRequestAndSubmitStockMovement(values);
-        })
-        .catch(() => Alert.error(this.props.translate('react.stockMovement.alert.fileError.label', 'Error occured during file upload!')));
-    } else {
-      this.prepareRequestAndSubmitStockMovement(values);
+    const errors = this.validate(values);
+    if (_.isEmpty(errors)) {
+      this.props.showSpinner();
+      const { files } = this.state;
+      if (files.length > 1) {
+        this.sendFiles(files)
+          .then(() => {
+            Alert.success(this.props.translate('react.stockMovement.alert.filesSuccess.label', 'Files uploaded successfuly!'), { timeout: 3000 });
+            this.removeFiles(_.map(files, file => file.name));
+            this.prepareRequestAndSubmitStockMovement(values);
+          })
+          .catch(() => Alert.error(this.props.translate('react.stockMovement.alert.filesError.label', 'Error occured during files upload!')));
+      } else if (files.length === 1) {
+        this.sendFile(files[0])
+          .then(() => {
+            Alert.success(this.props.translate('react.stockMovement.alert.fileSuccess.label', 'File uploaded successfuly!'), { timeout: 3000 });
+            this.removeFile(files[0].name);
+            this.prepareRequestAndSubmitStockMovement(values);
+          })
+          .catch(() => Alert.error(this.props.translate('react.stockMovement.alert.fileError.label', 'Error occured during file upload!')));
+      } else {
+        this.prepareRequestAndSubmitStockMovement(values);
+      }
     }
   }
 
   prepareRequestAndSubmitStockMovement(values) {
     const payload = {
       dateShipped: values.dateShipped,
-      shipmentType: values.shipmentType,
+      'shipmentType.id': values.shipmentType.id,
       trackingNumber: values.trackingNumber || '',
       driverName: values.driverName || '',
       comments: values.comments || '',
+      expectedDeliveryDate: values.expectedDeliveryDate || '',
     };
 
     if ((this.props.currentLocationId !== values.origin.id) && (values.origin.type !== 'SUPPLIER' && values.hasManageInventory)) {
@@ -530,7 +563,7 @@ class SendMovementPage extends Component {
         'You are not able to send shipment from a location other than origin. Change your current location.',
       ));
       this.props.hideSpinner();
-    } else if (values.shipmentType === _.find(this.state.shipmentTypes, shipmentType => shipmentType.label === 'Default').value) {
+    } else if (values.shipmentType.id === _.find(this.state.shipmentTypes, shipmentType => shipmentType.label === 'Default').id) {
       Alert.error(this.props.translate(
         'react.stockMovement.alert.populateShipmentType.label',
         'Please populate shipment type before continuing',
@@ -649,6 +682,7 @@ class SendMovementPage extends Component {
     const errors = {};
     const date = moment(this.props.minimumExpirationDate, 'MM/DD/YYYY');
     const dateShipped = moment(values.dateShipped, 'MM/DD/YYYY');
+    const expectedDeliveryDate = moment(values.expectedDeliveryDate, 'MM/DD/YYYY');
 
     if (date.diff(dateShipped) > 0) {
       errors.dateShipped = 'react.stockMovement.error.invalidDate.label';
@@ -658,6 +692,12 @@ class SendMovementPage extends Component {
     }
     if (!values.shipmentType) {
       errors.shipmentType = 'react.default.error.requiredField.label';
+    }
+    if (!values.expectedDeliveryDate) {
+      errors.expectedDeliveryDate = 'react.default.error.requiredField.label';
+    }
+    if (moment(dateShipped).diff(expectedDeliveryDate) > 0) {
+      errors.expectedDeliveryDate = 'react.stockMovement.error.pastDate.label';
     }
 
     return errors;
@@ -768,7 +808,7 @@ class SendMovementPage extends Component {
                     type="submit"
                     onClick={() => { this.sendFilesAndSave(values); }}
                     className={`${values.shipped ? 'btn btn-outline-secondary' : 'btn btn-outline-success'} float-right btn-form btn-xs`}
-                    disabled={invalid || values.statusCode === 'DISPATCHED'}
+                    disabled={values.statusCode === 'DISPATCHED'}
                   ><Translate id="react.stockMovement.sendShipment.label" defaultMessage="Send shipment" />
                   </button>
                   {values.shipped && this.props.isUserAdmin ?
@@ -791,6 +831,10 @@ class SendMovementPage extends Component {
                         isRowLoaded: this.isRowLoaded,
                         isPaginated: this.props.isPaginated,
                         isFirstPageLoaded: this.state.isFirstPageLoaded,
+                        // eslint-disable-next-line max-len
+                        isBoxNameEmpty: _.every(this.state.values.tableItems, ({ boxName }) => !boxName),
+                        // eslint-disable-next-line max-len
+                        isPalletNameEmpty: _.every(this.state.values.tableItems, ({ palletName }) => !palletName),
                       }))}
                 </div>
               </div>

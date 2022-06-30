@@ -14,6 +14,7 @@ import groovy.sql.Sql
 import grails.gorm.transactions.Transactional
 import grails.validation.Validateable
 import groovy.time.TimeCategory
+import org.apache.commons.lang.StringEscapeUtils
 import org.apache.commons.lang.StringUtils
 import org.grails.web.json.JSONObject
 import org.hibernate.Criteria
@@ -26,23 +27,23 @@ import org.pih.warehouse.core.Organization
 import org.pih.warehouse.core.Person
 import org.pih.warehouse.core.Tag
 import org.pih.warehouse.core.User
+import org.pih.warehouse.core.ValidationCode
 import org.pih.warehouse.inventory.InventoryItem
 import org.pih.warehouse.inventory.InventoryStatus
 import org.pih.warehouse.inventory.Transaction
-import org.pih.warehouse.inventory.TransactionCode
 import org.pih.warehouse.inventory.TransactionType
 import org.pih.warehouse.jobs.CalculateHistoricalQuantityJob
 import org.pih.warehouse.order.Order
 import org.pih.warehouse.order.OrderItem
-import org.pih.warehouse.order.OrderTypeCode
 import org.pih.warehouse.product.Category
 import org.pih.warehouse.product.Product
+import org.pih.warehouse.product.ProductActivityCode
 import org.pih.warehouse.product.ProductCatalog
 import org.pih.warehouse.product.ProductGroup
 import org.pih.warehouse.product.ProductPackage
-import org.pih.warehouse.product.ProductSummary
 import org.pih.warehouse.product.ProductSupplier
-import org.pih.warehouse.receiving.ReceiptStatusCode
+import org.pih.warehouse.product.ProductSupplierPreference
+import org.pih.warehouse.product.ProductType
 import org.pih.warehouse.reporting.Indicator
 import org.pih.warehouse.reporting.TransactionFact
 import org.pih.warehouse.requisition.Requisition
@@ -1048,7 +1049,8 @@ class JsonController {
 
         // Only calculate quantities if there are products - otherwise this will calculate quantities for all products in the system
         def location = Location.get(session.warehouse.id)
-        def quantityMap = productAvailabilityService.getQuantityOnHandByProduct(location)
+        def quantityMap = products ?
+                productAvailabilityService.getQuantityAvailableToPromiseByProduct(location, products) : []
 
         if (terms) {
             products = products.sort() {
@@ -1067,7 +1069,16 @@ class JsonController {
         items.addAll(products)
         items.unique { it.id }
         def json = items.collect { Product product ->
-            def quantity = quantityMap[product] ?: 0
+            def quantity = quantityMap[product.id] ?: 0
+
+            if (product.productType) {
+                if (!product.productType.supportedActivities?.contains(ProductActivityCode.SEARCHABLE)) {
+                    return
+                } else if (quantity == 0) {
+                    return
+                }
+            }
+
             quantity = " [" + quantity + " " + (product?.unitOfMeasure ?: "EA") + "]"
             def type = product.class.simpleName.toLowerCase()
             [
@@ -1079,7 +1090,7 @@ class JsonController {
                     color: product.color
             ]
         }
-        render json as JSON
+        render json.findAll { it != null } as JSON
     }
 
     //@CacheFlush("quantityOnHandCache")
@@ -1350,23 +1361,28 @@ class JsonController {
         // Flatten the data to make it easier to display
         data = data.collect {
             def quantity = it?.quantity ?: 0
+            def quantityAvailableToPromise = it?.quantityAvailableToPromise ?: 0
             def unitCost = hasRoleFinance ? (it?.product?.pricePerUnit ?: 0.0) : null
             def totalValue = hasRoleFinance ? g.formatNumber(number: quantity * unitCost) : null
             [
-                    id            : it.product?.id,
-                    status        : g.message(code: "binLocationSummary.${it.status}.label"),
-                    productCode   : it.product?.productCode,
-                    productName   : it?.product?.name,
-                    productGroup  : it?.product?.genericProduct?.name,
-                    category      : it?.product?.category?.name,
-                    lotNumber     : it?.inventoryItem?.lotNumber,
-                    expirationDate: g.formatDate(date: it?.inventoryItem?.expirationDate, format: "dd/MMM/yyyy"),
-                    unitOfMeasure : it?.product?.unitOfMeasure,
-                    binLocation   : it?.binLocation?.name ?: "Default",
-                    quantity      : quantity,
-                    unitCost      : unitCost,
-                    totalValue    : totalValue,
-                    handlingIcons : it.product?.getHandlingIcons()
+                    id                          : it.product?.id,
+                    status                      : g.message(code: "binLocationSummary.${it.status}.label"),
+                    productCode                 : it.product?.productCode,
+                    productName                 : it?.product?.name,
+                    productGroup                : it?.product?.genericProduct?.name,
+                    category                    : it?.product?.category?.name,
+                    lotNumber                   : it?.inventoryItem?.lotNumber,
+                    lotStatus                   : it?.inventoryItem?.lotStatus?.toString(),
+                    expirationDate              : g.formatDate(date: it?.inventoryItem?.expirationDate, format: "dd/MMM/yyyy"),
+                    unitOfMeasure               : it?.product?.unitOfMeasure,
+                    zone                        : it?.binLocation?.zone?.name ?: "",
+                    binLocation                 : it?.binLocation?.name ?: "Default",
+                    isOnHold                    : it?.binLocation?.isOnHold(),
+                    quantity                    : quantity,
+                    quantityAvailableToPromise  : quantityAvailableToPromise,
+                    unitCost                    : unitCost,
+                    totalValue                  : totalValue,
+                    handlingIcons               : it.product?.getHandlingIcons()
             ]
         }
         render(["aaData": data] as JSON)
@@ -1380,8 +1396,8 @@ class JsonController {
         def data = items.collect {
             def isOrderItem = it instanceof OrderItem
             [
-                    productCode  : it.product.productCode,
-                    productName  : it.product.name,
+                    productCode  : it.product?.productCode,
+                    productName  : it.product?.name,
                     qtyOrderedNotShipped : isOrderItem ? it.quantityRemaining * it.quantityPerUom : '',
                     qtyShippedNotReceived : isOrderItem ? '' : it.quantityRemaining,
                     orderNumber  : isOrderItem ? it.order.orderNumber : (it.shipment.isFromPurchaseOrder ? it.orderNumber : ''),
@@ -1460,11 +1476,9 @@ class JsonController {
             throw new IllegalArgumentException("End date must occur on or before today")
         }
 
-        if (command.refreshBalances) {
-            log.info "Refreshing inventory snapshot for startDate=${startDate}, endDate=${endDate}, and location=${location}"
-            inventorySnapshotService.populateInventorySnapshots(startDate, command.location, false)
-            inventorySnapshotService.populateInventorySnapshots(endDate, command.location, false)
-        }
+        log.info "Refreshing inventory snapshot for startDate=${startDate}, endDate=${endDate}, and location=${location}"
+        inventorySnapshotService.populateInventorySnapshots(startDate, command.location, false)
+        inventorySnapshotService.populateInventorySnapshots(endDate, command.location, false)
 
         def data = (params.format == "text/csv") ?
                 inventorySnapshotService.getTransactionReportDetails(location, categories, tagList, catalogList, startDate, endDate) :
@@ -1732,7 +1746,7 @@ class JsonController {
     def getForecastingData = {
         Product product = Product.get(params.product.id)
         Location location = Location.get(params.location.id)
-        def demandData = forecastingService.getDemand(location, product)
+        def demandData = forecastingService.getDemand(location, null, product)
         render demandData as JSON
     }
 
@@ -1747,17 +1761,34 @@ class JsonController {
     def productChanged() {
         Product product = Product.get(params.productId)
         Organization supplier = Organization.get(params.supplierId)
+        Organization destinationParty = Organization.get(params.destinationPartyId)
         List productSuppliers = []
         if (product && supplier) {
-            productSuppliers = ProductSupplier.findAllByProductAndSupplier(product, supplier)
+            productSuppliers = dataService.executeQuery(
+                    """
+                        SELECT ps.id, ps.code, ps.supplier_code, ps.name, ps.manufacturer_code, ps.manufacturer_id from product_supplier ps
+                        LEFT OUTER JOIN product_supplier_preference default_preference ON default_preference.product_supplier_id = ps.id AND default_preference.destination_party_id IS NULL
+                        LEFT OUTER JOIN preference_type default_preference_type ON default_preference.preference_type_id = default_preference_type.id
+                        LEFT OUTER JOIN  product_supplier_preference preference ON preference.product_supplier_id = ps.id AND preference.destination_party_id = :destinationPartyId
+                        LEFT OUTER JOIN preference_type party_preference_type ON preference.preference_type_id = party_preference_type.id
+                        WHERE product_id = :productId
+                        AND supplier_id = :supplierId
+                        AND CASE WHEN preference.id IS NOT NULL THEN party_preference_type.validation_code != :validationCode ELSE
+                        (CASE WHEN default_preference.id IS NOT NULL THEN default_preference_type.validation_code != :validationCode ELSE true END) END
+                    """, [
+                    supplierId: supplier.id,
+                    productId: product.id,
+                    destinationPartyId: destinationParty.id,
+                    validationCode: ValidationCode.HIDE.name(),
+            ])
         }
         productSuppliers = productSuppliers.collect {[
-            id: it.id,
-            code: it.code,
-            supplierCode: it.supplierCode,
-            text: it.code + ' ' + it.name,
-            manufacturerCode: it.manufacturerCode,
-            manufacturer: it.manufacturer?.id,
+                id: it.id,
+                code: it.code,
+                supplierCode: it.supplier_code,
+                text: it.code + ' ' + it.name,
+                manufacturerCode: it.manufacturer_code,
+                manufacturer: it.manufacturer_id,
         ]}
 
         render([productSupplierOptions: productSuppliers] as JSON)
@@ -1766,14 +1797,18 @@ class JsonController {
     def productSupplierChanged() {
         ProductSupplier productSupplier = ProductSupplier.findById(params.productSupplierId)
         ProductPackage productPackage = productSupplier?.defaultProductPackage
+        Organization destinationParty = Organization.get(params.destinationPartyId)
+        ProductSupplierPreference preference = productSupplier.productSupplierPreferences.find { it.destinationParty == destinationParty }
         render([
-                unitPrice: productPackage?.price ? g.formatNumber(number: productPackage?.price) : null,
+                unitPrice: productPackage?.productPrice?.price ? g.formatNumber(number: productPackage?.productPrice?.price) : null,
                 supplierCode: productSupplier?.supplierCode,
                 manufacturer: productSupplier?.manufacturer,
                 manufacturerCode: productSupplier?.manufacturerCode,
                 minOrderQuantity: productSupplier?.minOrderQuantity,
                 quantityPerUom: productPackage?.quantity,
                 unitOfMeasure: productPackage?.uom,
+                validationCode: preference ? preference?.preferenceType?.validationCode :
+                        productSupplier.globalProductSupplierPreference?.preferenceType?.validationCode,
         ] as JSON)
     }
 
@@ -1798,21 +1833,23 @@ class JsonController {
                     "Quantity Issued" { it.qtyIssued }
                     "Quantity Demand" { it.qtyDemand }
                     "Reason Code" { it.reasonCode }
+                    "Reason Code Classification" { it.reasonCodeClassification }
                 })
 
                 data.each {
                     csv << [
-                            requestNumber: it.requestNumber,
-                            dateRequested: it.dateRequested,
-                            dateIssued   : it.dateIssued,
-                            origin       : StringEscapeUtils.escapeCsv(it.origin),
-                            destination  : StringEscapeUtils.escapeCsv(it.destination),
-                            productCode  : it.productCode,
-                            productName  : StringEscapeUtils.escapeCsv(it.productName),
-                            qtyRequested : it.quantityRequested,
-                            qtyIssued    : it.quantityIssued,
-                            qtyDemand    : it.quantityDemand,
-                            reasonCode   : it.reasonCode,
+                            requestNumber           : it.requestNumber,
+                            dateRequested           : it.dateRequested,
+                            dateIssued              : it.dateIssued,
+                            origin                  : StringEscapeUtils.escapeCsv(it.origin),
+                            destination             : StringEscapeUtils.escapeCsv(it.destination),
+                            productCode             : it.productCode,
+                            productName             : StringEscapeUtils.escapeCsv(it.productName),
+                            qtyRequested            : it.quantityRequested,
+                            qtyIssued               : it.quantityIssued,
+                            qtyDemand               : it.quantityDemand,
+                            reasonCode              : it.reasonCode,
+                            reasonCodeClassification: it.reasonCodeClassification,
                     ]
                 }
 
@@ -1824,6 +1861,23 @@ class JsonController {
         } else {
             throw new IllegalArgumentException("Start and end date are required")
         }
+    }
+
+    def checkIfProductFieldRemoved = {
+        ProductType oldProductType = ProductType.get(params.oldTypeId)
+        ProductType newProductType = ProductType.get(params.newTypeId)
+
+        Boolean fieldRemoved = false
+
+        if (newProductType?.displayedFields && !newProductType.displayedFields.isEmpty()) {
+            if (oldProductType?.displayedFields && !oldProductType.displayedFields.isEmpty()) {
+                fieldRemoved = !newProductType.displayedFields.containsAll(oldProductType.displayedFields)
+            } else {
+                fieldRemoved = true
+            }
+        }
+
+        render([fieldRemoved: fieldRemoved] as JSON)
     }
 }
 
@@ -1846,5 +1900,4 @@ class TransactionReportCommand implements Validateable {
     Location location
     List<TransactionType> transactionTypes
     Category category
-    Boolean refreshBalances = Boolean.FALSE
 }

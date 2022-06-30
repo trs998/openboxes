@@ -1,15 +1,30 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import PropTypes from 'prop-types';
-import { Form } from 'react-final-form';
+
 import arrayMutators from 'final-form-arrays';
-import Alert from 'react-s-alert';
-import { confirmAlert } from 'react-confirm-alert';
-import { getTranslate } from 'react-localize-redux';
-import moment from 'moment';
 import update from 'immutability-helper';
 import fileDownload from 'js-file-download';
+import _ from 'lodash';
+import moment from 'moment';
+import PropTypes from 'prop-types';
+import { confirmAlert } from 'react-confirm-alert';
+import { Form } from 'react-final-form';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import Alert from 'react-s-alert';
+
+import { fetchUsers, hideSpinner, showSpinner } from 'actions';
+import ArrayField from 'components/form-elements/ArrayField';
+import ButtonField from 'components/form-elements/ButtonField';
+import DateField from 'components/form-elements/DateField';
+import LabelField from 'components/form-elements/LabelField';
+import SelectField from 'components/form-elements/SelectField';
+import TextField from 'components/form-elements/TextField';
+import CombinedShipmentItemsModal from 'components/stock-movement-wizard/modals/CombinedShipmentItemsModal';
+import AlertMessage from 'utils/AlertMessage';
+import apiClient from 'utils/apiClient';
+import { renderFormField } from 'utils/form-utils';
+import { debounceProductsFetch } from 'utils/option-utils';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-confirm-alert/src/react-confirm-alert.css';
 
@@ -38,8 +53,10 @@ const DELETE_BUTTON_FIELD = {
     fieldValue, removeItem, removeRow, updateTotalCount,
   }) => ({
     onClick: fieldValue && fieldValue.id ? () => {
-      removeItem(fieldValue.id).then(() => removeRow());
-      updateTotalCount(-1);
+      removeItem(fieldValue.id).then(() => {
+        removeRow();
+        updateTotalCount(-1);
+      });
     } : () => { updateTotalCount(-1); removeRow(); },
     disabled: fieldValue && fieldValue.statusCode === 'SUBSTITUTED',
   }),
@@ -81,6 +98,15 @@ const FIELDS = {
         label: 'react.stockMovement.orderNumber.label',
         defaultMessage: 'Order number',
         flexWidth: '1',
+        fieldKey: '',
+        getDynamicAttr: ({
+          fieldValue,
+        }) => ({
+          url: fieldValue && fieldValue.orderId ? `/openboxes/order/show/${fieldValue.orderId}` : '',
+        }),
+        attributes: {
+          formatValue: fieldValue => fieldValue && fieldValue.orderNumber,
+        },
       },
       product: {
         type: SelectField,
@@ -105,21 +131,28 @@ const FIELDS = {
           loadOptions: debouncedProductsFetch,
         }),
       },
-      recipient: {
-        type: SelectField,
-        label: 'react.stockMovement.recipient.label',
-        defaultMessage: 'Recipient',
-        flexWidth: '1.5',
-        getDynamicAttr: ({
-          recipients, rowIndex, values, updateRow,
-        }) => ({
-          options: recipients,
+      lotNumber: {
+        type: TextField,
+        label: 'react.stockMovement.lot.label',
+        defaultMessage: 'Lot',
+        flexWidth: '1',
+        getDynamicAttr: ({ rowIndex, values, updateRow }) => ({
           onBlur: () => updateRow(values, rowIndex),
         }),
+      },
+      expirationDate: {
+        type: DateField,
+        label: 'react.stockMovement.expiry.label',
+        defaultMessage: 'Expiry',
+        flexWidth: '1.5',
         attributes: {
-          labelKey: 'name',
-          openOnClick: false,
+          dateFormat: 'MM/DD/YYYY',
+          autoComplete: 'off',
+          placeholderText: 'MM/DD/YYYY',
         },
+        getDynamicAttr: ({ rowIndex, values, updateRow }) => ({
+          onBlur: () => updateRow(values, rowIndex),
+        }),
       },
       quantityRequested: {
         type: TextField,
@@ -156,28 +189,21 @@ const FIELDS = {
           onBlur: () => updateRow(values, rowIndex),
         }),
       },
-      lotNumber: {
-        type: TextField,
-        label: 'react.stockMovement.lot.label',
-        defaultMessage: 'Lot',
-        flexWidth: '1',
-        getDynamicAttr: ({ rowIndex, values, updateRow }) => ({
-          onBlur: () => updateRow(values, rowIndex),
-        }),
-      },
-      expirationDate: {
-        type: DateField,
-        label: 'react.stockMovement.expiry.label',
-        defaultMessage: 'Expiry',
+      recipient: {
+        type: SelectField,
+        label: 'react.stockMovement.recipient.label',
+        defaultMessage: 'Recipient',
         flexWidth: '1.5',
-        attributes: {
-          dateFormat: 'MM/DD/YYYY',
-          autoComplete: 'off',
-          placeholderText: 'MM/DD/YYYY',
-        },
-        getDynamicAttr: ({ rowIndex, values, updateRow }) => ({
+        getDynamicAttr: ({
+          recipients, rowIndex, values, updateRow,
+        }) => ({
+          options: recipients,
           onBlur: () => updateRow(values, rowIndex),
         }),
+        attributes: {
+          labelKey: 'name',
+          openOnClick: false,
+        },
       },
       split: {
         type: ButtonField,
@@ -200,9 +226,10 @@ const FIELDS = {
               recipient: fieldValue.recipient,
               sortOrder: fieldValue.sortOrder + 1,
               orderItemId: fieldValue.orderItemId,
-              referenceId: fieldValue.id,
+              referenceId: fieldValue.orderItemId,
               orderNumber: fieldValue.orderNumber,
               packSize: fieldValue.packSize,
+              quantityAvailable: fieldValue.quantityAvailable,
             }, rowIndex);
           },
         }),
@@ -214,6 +241,8 @@ const FIELDS = {
     },
   },
 };
+
+const LOT_AND_EXPIRY_ERROR = 'react.stockMovement.error.lotAndExpiryControl.label';
 
 /* eslint class-methods-use-this: ["error",{ "exceptMethods": ["getLineItemsToBeSaved"] }] */
 /**
@@ -235,6 +264,8 @@ class AddItemsPage extends Component {
       values: { ...this.props.initialValues, lineItems: [] },
       totalCount: 0,
       isFirstPageLoaded: false,
+      showAlert: false,
+      alertMessage: '',
     };
 
     this.props.showSpinner();
@@ -307,7 +338,7 @@ class AddItemsPage extends Component {
           ...val.product,
           label: `${val.productCode} ${val.product.name}`,
         },
-        referenceId: val.id,
+        referenceId: val.orderItemId,
       }),
     );
 
@@ -347,6 +378,7 @@ class AddItemsPage extends Component {
     const errors = {};
     errors.lineItems = [];
     const date = moment(this.props.minimumExpirationDate, 'MM/DD/YYYY');
+    let alertMessage = '';
 
     _.forEach(values.lineItems, (item, key) => {
       if (!_.isNil(item.product) && (!item.quantityRequested || item.quantityRequested <= 0)) {
@@ -370,14 +402,13 @@ class AddItemsPage extends Component {
       }
       const splitItems = _.filter(values.lineItems, lineItem =>
         lineItem.referenceId === item.referenceId);
-      if (!item.id) {
-        const originalItem = _.find(splitItems, original => original.id);
+      if (!item.id || splitItems.length > 1) {
         const requestedQuantity = _.reduce(
           splitItems, (sum, val) =>
             (sum + (val.quantityRequested ? _.toInteger(val.quantityRequested) : 0)),
           0,
         );
-        if (originalItem && requestedQuantity > originalItem.quantityAvailable) {
+        if (requestedQuantity > item.quantityAvailable) {
           _.forEach(values.lineItems, (lineItem, lineItemKey) => {
             _.forEach(splitItems, (splitItem) => {
               if (lineItem === splitItem) {
@@ -390,7 +421,30 @@ class AddItemsPage extends Component {
         item && item.quantityAvailable < _.toInteger(item.quantityRequested)) {
         errors.lineItems[key] = { quantityRequested: 'react.stockMovement.error.higherQuantity.label' };
       }
+      if (!_.isNil(item.product) && item.product.lotAndExpiryControl) {
+        if (!item.expirationDate && (_.isNil(item.lotNumber) || _.isEmpty(item.lotNumber))) {
+          errors.lineItems[key] = {
+            expirationDate: LOT_AND_EXPIRY_ERROR,
+            lotNumber: LOT_AND_EXPIRY_ERROR,
+          };
+        } else if (!item.expirationDate) {
+          errors.lineItems[key] = { expirationDate: LOT_AND_EXPIRY_ERROR };
+        } else if (_.isNil(item.lotNumber) || _.isEmpty(item.lotNumber)) {
+          errors.lineItems[key] = { lotNumber: LOT_AND_EXPIRY_ERROR };
+        }
+      }
+
+      if (errors.lineItems[key]) {
+        if (!alertMessage) {
+          alertMessage = `Following rows contain validation errors: Row ${key + 1}: ${item.productCode}`;
+        } else {
+          alertMessage += `, Row ${key + 1}: ${item.productCode}`;
+        }
+      }
     });
+
+    const { showAlert } = this.state;
+    this.setState({ alertMessage, showAlert: showAlert && !alertMessage ? false : showAlert });
     return errors;
   }
 
@@ -520,6 +574,12 @@ class AddItemsPage extends Component {
    * @public
    */
   nextPage(formValues) {
+    const errors = this.validate(formValues).lineItems;
+    if (errors.length) {
+      this.setState({ showAlert: true });
+      return;
+    }
+
     const lineItems = _.filter(formValues.lineItems, val => !_.isEmpty(val) && val.product);
 
     if (_.some(lineItems, item => !item.quantityRequested || item.quantityRequested === '0')) {
@@ -539,7 +599,7 @@ class AddItemsPage extends Component {
   saveAndTransitionToNextStep(formValues, lineItems) {
     if (_.some(lineItems, item => item.inventoryItem
       && item.expirationDate !== item.inventoryItem.expirationDate)) {
-      if (_.some(lineItems, item => item.inventoryItem.quantity && item.inventoryItem.quantity !== '0')) {
+      if (_.some(lineItems, item => item.inventoryItem && item.inventoryItem.quantity && item.inventoryItem.quantity !== '0')) {
         this.confirmInventoryItemExpirationDateUpdate(() =>
           this.saveRequisitionItemsAndTransitionToNextStep(formValues, lineItems));
       } else {
@@ -584,7 +644,13 @@ class AddItemsPage extends Component {
       .then((resp) => {
         let values = formValues;
         if (resp) {
-          values = { ...formValues, lineItems: resp.data.data.lineItems };
+          values = {
+            ...formValues,
+            lineItems: _.map(resp.data.data.lineItems, item => ({
+              ...item,
+              referenceId: item.orderItemId,
+            })),
+          };
         }
         this.transitionToNextStep()
           .then(() => {
@@ -621,7 +687,7 @@ class AddItemsPage extends Component {
                 ...val.product,
                 label: `${val.productCode} ${val.product.name}`,
               },
-              referenceId: val.id,
+              referenceId: val.orderItemId,
             }),
           );
 
@@ -640,11 +706,14 @@ class AddItemsPage extends Component {
    */
   save(formValues) {
     const lineItems = _.filter(formValues.lineItems, item => !_.isEmpty(item));
-
-    if (_.some(lineItems, item => !item.quantityRequested || item.quantityRequested === '0')) {
-      this.confirmSave(() => this.saveItems(lineItems));
+    if (lineItems.length > 0) {
+      if (_.some(lineItems, item => !item.quantityRequested || item.quantityRequested === '0')) {
+        this.confirmSave(() => this.saveItems(lineItems));
+      } else {
+        this.saveItems(lineItems);
+      }
     } else {
-      this.saveItems(lineItems);
+      Alert.error(this.props.translate('react.stockMovement.error.noShipmentItems.label', 'Cannot save shipment from PO with no items.'), { timeout: 2000 });
     }
   }
 
@@ -654,29 +723,35 @@ class AddItemsPage extends Component {
    * @public
    */
   saveAndExit(formValues) {
-    const errors = this.validate(formValues).lineItems;
-    if (!errors.length) {
-      this.saveRequisitionItemsInCurrentStep(formValues.lineItems)
-        .then(() => {
+    if (formValues.lineItems.length > 0) {
+      const errors = this.validate(formValues).lineItems;
+      if (!errors.length) {
+        this.saveRequisitionItemsInCurrentStep(formValues.lineItems)
+          .then(() => {
+            window.location = `/openboxes/stockMovement/show/${formValues.stockMovementId}`;
+          });
+      } else {
+        confirmAlert({
+          title: this.props.translate('react.stockMovement.confirmExit.label', 'Confirm save'),
+          message: this.props.translate(
+            'react.stockMovement.confirmExit.message',
+            'Validation errors occurred. Are you sure you want to exit and lose unsaved data?',
+          ),
+          buttons: [
+            {
+              label: this.props.translate('react.default.yes.label', 'Yes'),
+              onClick: () => {
           window.location = stringUrlInterceptor(`/stockMovement/show/${formValues.stockMovementId}`);
+              },
+            },
+            {
+              label: this.props.translate('react.default.no.label', 'No'),
+            },
+          ],
         });
+      }
     } else {
-      confirmAlert({
-        title: this.props.translate('react.stockMovement.confirmExit.label', 'Confirm save'),
-        message: this.props.translate(
-          'react.stockMovement.confirmExit.message',
-          'Validation errors occurred. Are you sure you want to exit and lose unsaved data?',
-        ),
-        buttons: [
-          {
-            label: this.props.translate('react.default.yes.label', 'Yes'),
-            onClick: () => { window.location = stringUrlInterceptor(`/stockMovement/show/${formValues.stockMovementId}`); },
-          },
-          {
-            label: this.props.translate('react.default.no.label', 'No'),
-          },
-        ],
-      });
+      Alert.error(this.props.translate('react.stockMovement.error.noShipmentItems.label', 'Cannot save shipment from PO with no items.'), { timeout: 2000 });
     }
   }
 
@@ -707,6 +782,29 @@ class AddItemsPage extends Component {
     return apiClient.delete(removeItemsUrl)
       .catch(() => {
         this.props.hideSpinner();
+        return Promise.reject(new Error('react.stockMovement.error.deleteRequisitionItem.label'));
+      });
+  }
+
+  /**
+   * Removes all items from requisition's items list.
+   * @public
+   */
+  removeAll() {
+    const removeItemsUrl = `/openboxes/api/stockMovements/${this.state.values.stockMovementId}/removeAllItems`;
+
+    return apiClient.delete(removeItemsUrl)
+      .then(() => {
+        this.setState({
+          totalCount: 0,
+          values: {
+            ...this.state.values,
+            lineItems: [],
+          },
+        });
+      })
+      .catch(() => {
+        this.fetchLineItems();
         return Promise.reject(new Error('react.stockMovement.error.deleteRequisitionItem.label'));
       });
   }
@@ -835,6 +933,8 @@ class AddItemsPage extends Component {
   }
 
   render() {
+    const { showAlert, alertMessage } = this.state;
+
     return (
       <Form
         onSubmit={() => {}}
@@ -843,6 +943,7 @@ class AddItemsPage extends Component {
         initialValues={this.state.values}
         render={({ handleSubmit, values, invalid }) => (
           <div className="d-flex flex-column">
+            <AlertMessage show={showAlert} message={alertMessage} danger />
             <span className="buttons-container">
               <label
                 htmlFor="csvInput"
@@ -911,6 +1012,14 @@ class AddItemsPage extends Component {
               >
                 <span><i className="fa fa-sign-out pr-2" /><Translate id="react.default.button.saveAndExit.label" defaultMessage="Save and exit" /></span>
               </button>
+              <button
+                type="button"
+                disabled={invalid}
+                onClick={() => this.removeAll()}
+                className="float-right mb-1 btn btn-outline-danger align-self-end btn-xs"
+              >
+                <span><i className="fa fa-remove pr-2" /><Translate id="react.default.button.deleteAll.label" defaultMessage="Delete all" /></span>
+              </button>
             </span>
             <form onSubmit={handleSubmit}>
               <div className="table-form">
@@ -945,11 +1054,7 @@ class AddItemsPage extends Component {
                 </button>
                 <button
                   type="submit"
-                  onClick={() => {
-                    if (!invalid) {
-                      this.nextPage(values);
-                    }
-                  }}
+                  onClick={() => this.nextPage(values)}
                   className="btn btn-outline-primary btn-form float-right btn-xs"
                   disabled={!_.some(values.lineItems, item => !_.isEmpty(item))}
                 ><Translate id="react.default.button.next.label" defaultMessage="Next" />

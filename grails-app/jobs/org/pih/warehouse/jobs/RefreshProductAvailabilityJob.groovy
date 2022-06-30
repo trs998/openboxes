@@ -15,7 +15,6 @@ import org.pih.warehouse.core.Location
 import org.pih.warehouse.product.Product
 import org.quartz.DisallowConcurrentExecution
 import org.quartz.JobExecutionContext
-import org.quartz.JobExecutionException
 
 @DisallowConcurrentExecution
 class RefreshProductAvailabilityJob {
@@ -36,23 +35,7 @@ class RefreshProductAvailabilityJob {
             Object productIds = context.mergedJobDataMap.get("productIds")
             String locationId = context.mergedJobDataMap.get("locationId")
 
-            // Calculate product availability for a single location/product, or all products within a single location
-            if (locationId) {
-                Location location = Location.load(locationId)
-                if (productIds && locationId) {
-                    productIds.each { productId ->
-                        Product product = Product.load(productId)
-                        productAvailabilityService.refreshProductAvailability(location, product, forceRefresh)
-                    }
-                }
-                else {
-                    productAvailabilityService.refreshProductAvailability(location, forceRefresh)
-                }
-            }
-            // Calculate product availability for all products within all locations
-            else {
-                productAvailabilityService.refreshProductAvailability(forceRefresh)
-            }
+            productAvailabilityService.refreshProductsAvailability(locationId, productIds, forceRefresh)
             log.info "Finished refreshing product availability data in " + (System.currentTimeMillis() - startTime) + " ms"
         }
     }

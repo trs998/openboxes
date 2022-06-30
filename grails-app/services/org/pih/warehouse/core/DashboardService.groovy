@@ -211,11 +211,39 @@ class DashboardService {
         return expiringStock
     }
 
+    def getInventoryItems(Location location) {
+        def inventoryByProduct = productAvailabilityService.getInventoryByProduct(location)
+        def inventoryLevelMap = InventoryLevel.findAllByInventory(location.inventory).groupBy {
+            it.product
+        }
+
+        def inventoryItems = []
+        inventoryByProduct.each { product, inventoryItem ->
+            def inventoryLevel = inventoryLevelMap[product]?.first()
+            def inventoryStatus
+
+            if (inventoryLevel) {
+                inventoryStatus = inventoryLevel?.statusMessage(inventoryItem.quantityOnHand) ?: "${inventoryLevel?.id}"
+            } else {
+                inventoryStatus = inventoryItem.quantityOnHand > 0 ? "IN_STOCK" : "STOCK_OUT"
+            }
+
+            inventoryItems << [
+                    status: inventoryStatus,
+                    product: product,
+                    quantity: inventoryItem.quantityOnHand,
+                    quantityAvailableToPromise: inventoryItem.quantityAvailableToPromise,
+                    inventoryLevel: inventoryLevel
+            ]
+        }
+
+        return inventoryItems
+    }
 
     def getReconditionedStock(Location location) {
         long startTime = System.currentTimeMillis()
-        def quantityMap = productAvailabilityService.getCurrentInventory(location)
-        def reconditionedStock = quantityMap.findAll { it.key.reconditioned }
+        def inventoryItems = getInventoryItems(location)
+        def reconditionedStock = inventoryItems.findAll { it.product.reconditioned }
         log.debug "Get reconditioned stock: " + (System.currentTimeMillis() - startTime) + " ms"
         return reconditionedStock
     }
@@ -223,15 +251,15 @@ class DashboardService {
 
     def getTotalStock(Location location) {
         long startTime = System.currentTimeMillis()
-        def quantityMap = productAvailabilityService.getCurrentInventory(location)
+        def inventoryItems = getInventoryItems(location)
         log.debug "Get total stock: " + (System.currentTimeMillis() - startTime) + " ms"
-        return quantityMap
+        return inventoryItems
     }
 
     def getInStock(Location location) {
         long startTime = System.currentTimeMillis()
-        def quantityMap = productAvailabilityService.getCurrentInventory(location)
-        def inStock = quantityMap.findAll { it.value > 0 }
+        def inventoryItems = getInventoryItems(location)
+        def inStock = inventoryItems.findAll { it.quantity > 0 }
         log.debug "Get in stock: " + (System.currentTimeMillis() - startTime) + " ms"
         return inStock
     }
@@ -267,6 +295,8 @@ class DashboardService {
         def formatDate = new SimpleDateFormat("dd/MMM/yyyy hh:mm:ss")
         def sw = new StringWriter()
 
+        def inventoryItems = getTotalStock(location)
+        def products = inventoryItems.collect { it.product }
 
         def quantityMap = getTotalStock(location)
         def statusMap = getInventoryStatus(location)
@@ -468,21 +498,22 @@ class DashboardService {
     }
 
     def getQuantityOnHandZero(Location location) {
-        def quantityMap = productAvailabilityService.getCurrentInventory(location)
-        def stockOut = quantityMap.findAll { product, quantity ->
-            quantity <= 0
-        }
+        def inventoryItems = getInventoryItems(location)
+        def stockOut = inventoryItems.findAll { it.quantity <= 0 }
+
+        log.info "Get quantity on hand zero: " + (System.currentTimeMillis() - startTime) + " ms"
         return stockOut
 
     }
 
     def getOutOfStock(Location location, String abcClass) {
-        def quantityMap = productAvailabilityService.getCurrentInventory(location)
-        def inventoryLevelMap = InventoryLevel.findAllByInventory(location.inventory).groupBy {
-            it.product
-        }
-        def stockOut = quantityMap.findAll { product, quantity ->
-            def inventoryLevel = inventoryLevelMap[product]?.first()
+        long startTime = System.currentTimeMillis()
+        def inventoryItems = getInventoryItems(location)
+
+        def stockOut = inventoryItems.findAll { inventoryItem ->
+            def inventoryLevel = inventoryItem.inventoryLevel
+            def quantity = inventoryItem.quantity
+
             if (abcClass)
                 inventoryLevel?.status >= InventoryStatus.SUPPORTED && quantity <= 0 && (abcClass == inventoryLevel.abcClass)
             else
@@ -492,54 +523,106 @@ class DashboardService {
     }
 
     def getLowStock(Location location) {
-        def quantityMap = productAvailabilityService.getCurrentInventory(location)
-        def inventoryLevelMap = InventoryLevel.findAllByInventory(location.inventory).groupBy {
-            it.product
-        }
-        def lowStock = quantityMap.findAll { product, quantity ->
-            def inventoryLevel = inventoryLevelMap[product]?.first()
-            def minQuantity = inventoryLevelMap[product]?.first()?.minQuantity
+        def inventoryItems = getInventoryItems(location)
+        log.info("getInventoryItems: " + (System.currentTimeMillis() - startTime) + " ms")
+
+        def lowStock = inventoryItems.findAll { inventoryItem ->
+            def quantity = inventoryItem.quantity
+            def inventoryLevel = inventoryItem.inventoryLevel
+            def minQuantity = inventoryLevel?.minQuantity
+
             inventoryLevel?.status >= InventoryStatus.SUPPORTED && minQuantity && quantity <= minQuantity
         }
         return lowStock
     }
 
     def getReorderStock(Location location) {
-        def quantityMap = productAvailabilityService.getCurrentInventory(location)
-        def inventoryLevelMap = InventoryLevel.findAllByInventory(location.inventory).groupBy {
-            it.product
-        }
-        def reorderStock = quantityMap.findAll { product, quantity ->
-            def inventoryLevel = inventoryLevelMap[product]?.first()
-            def reorderQuantity = inventoryLevelMap[product]?.first()?.reorderQuantity
+        def inventoryItems = getInventoryItems(location)
+
+        def reorderStock = inventoryItems.findAll { inventoryItem ->
+            def quantity = inventoryItem.quantity
+            def inventoryLevel = inventoryItem.inventoryLevel
+            def reorderQuantity = inventoryLevel?.reorderQuantity
+
             inventoryLevel?.status >= InventoryStatus.SUPPORTED && reorderQuantity && quantity <= reorderQuantity
         }
+        log.info "Get reorder stock: " + (System.currentTimeMillis() - startTime) + " ms"
+        return reorderStock
+    }
+
+    def getReorderReport(Location location) {
+        long startTime = System.currentTimeMillis()
+        ArrayList<Map> inventoryItems = getInventoryItems(location)
+
+        ArrayList<Map> reorderStock = inventoryItems.findAll { Map inventoryItem ->
+            def inventoryLevel = inventoryItem?.inventoryLevel as InventoryLevel
+
+            if (inventoryLevel?.binLocation != null) {
+                return false;
+            }
+
+            def minQuantity = inventoryLevel?.minQuantity
+
+            if(minQuantity == null) {
+                return false
+            }
+
+            def reorderQuantity = inventoryLevel?.reorderQuantity
+
+            if(reorderQuantity == null) {
+                return false
+            }
+
+            def quantityATP = inventoryItem.quantityAvailableToPromise as Number
+
+            if (quantityATP >= minQuantity || quantityATP >= reorderQuantity) {
+                return false
+            }
+
+            def quantityToOrder = null
+            def expectedReorderCost = null
+            def unitCost =  inventoryLevel?.product?.costPerUnit
+
+            if (inventoryLevel?.maxQuantity != null) {
+                quantityToOrder = inventoryLevel.maxQuantity - quantityATP
+
+                if(unitCost != null) {
+                    expectedReorderCost = quantityToOrder * unitCost
+                }
+            }
+            inventoryItem.put("quantityToOrder", quantityToOrder);
+            inventoryItem.put("unitCost", unitCost);
+            inventoryItem.put("expectedReorderCost", expectedReorderCost);
+
+            true
+        }
+        log.info "Get simple reorder stock: " + (System.currentTimeMillis() - startTime) + " ms"
         return reorderStock
     }
 
     def getOverStock(Location location) {
-        def quantityMap = productAvailabilityService.getCurrentInventory(location)
-        def inventoryLevelMap = InventoryLevel.findAllByInventory(location.inventory).groupBy {
-            it.product
-        }
-        def overStock = quantityMap.findAll { product, quantity ->
-            def inventoryLevel = inventoryLevelMap[product]?.first()
-            def maxQuantity = inventoryLevelMap[product]?.first()?.maxQuantity
+        long startTime = System.currentTimeMillis()
+        def inventoryItems = getInventoryItems(location)
+
+        def overStock = inventoryItems.findAll { inventoryItem ->
+            def quantity = inventoryItem.quantity
+            def inventoryLevel = inventoryItem.inventoryLevel
+            def maxQuantity = inventoryLevel?.maxQuantity
+
             inventoryLevel?.status >= InventoryStatus.SUPPORTED && maxQuantity && quantity > maxQuantity
         }
         return overStock
     }
 
     def getHealthyStock(Location location) {
-        def quantityMap = productAvailabilityService.getCurrentInventory(location)
-        def inventoryLevelMap = InventoryLevel.findAllByInventory(location.inventory).groupBy {
-            it.product
-        }
+        def inventoryItems = getInventoryItems(location)
 
-        def healthyStock = quantityMap.findAll { product, quantity ->
-            def inventoryLevel = inventoryLevelMap[product]?.first()
-            def reorderQuantity = inventoryLevelMap[product]?.first()?.reorderQuantity
-            def maxQuantity = inventoryLevelMap[product]?.first()?.maxQuantity
+        def healthyStock = inventoryItems.findAll { inventoryItem ->
+            def quantity = inventoryItem.quantity
+            def inventoryLevel = inventoryItem.inventoryLevel
+            def reorderQuantity = inventoryLevel?.reorderQuantity
+            def maxQuantity = inventoryLevel?.maxQuantity
+
             inventoryLevel?.status >= InventoryStatus.SUPPORTED && quantity > reorderQuantity && quantity <= maxQuantity
         }
         return healthyStock

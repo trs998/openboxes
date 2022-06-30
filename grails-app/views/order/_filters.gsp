@@ -1,4 +1,8 @@
-<%@ page import="org.pih.warehouse.core.ActivityCode" %>
+<%@ page import="org.pih.warehouse.core.ActivityCode;" %>
+<%@ page import="org.pih.warehouse.core.Constants;" %>
+<%@ page import="org.pih.warehouse.order.OrderStatus;" %>
+<%@ page import="org.pih.warehouse.order.OrderType;" %>
+<%@ page import="org.pih.warehouse.order.OrderTypeCode;" %>
 <div class="box">
     <h2><warehouse:message code="default.filters.label"/></h2>
     <g:form id="listForm" action="list" method="GET">
@@ -6,25 +10,26 @@
         <g:hiddenField name="max" value="${params.max ?: 10}"/>
         <div class="filter-list">
             <div class="filter-list-item">
-                <label>${warehouse.message(code: 'order.orderNumber.label')}</label>
-                <g:textField class="text" id="orderNumber" name="orderNumber" value="${params.orderNumber}" style="width:100%"/>
+                <label>${warehouse.message(code: 'default.search.label')}</label>
+                <g:textField class="text" id="q" name="q" value="${params.q}" style="width:100%" placeholder="Search by order number or description"/>
 
             </div>
             <div class="filter-list-item">
                 <label>${warehouse.message(code: 'order.orderTypeCode.label')}</label>
-                <g:select id="orderTypeCode"
-                          name="orderTypeCode"
-                          from="${org.pih.warehouse.order.OrderTypeCode.list()}"
+                <g:select id="orderType"
+                          name="orderType"
+                          from="${OrderType.list()}"
                           class="select2"
-                          optionValue="${{ format.metadata(obj: it) }}"
-                          value="${params?.orderTypeCode}"
+                          optionValue="name"
+                          optionKey="code"
+                          value="${params?.orderType}"
                           noSelection="['': '']"/>
             </div>
             <div class="filter-list-item">
                 <label>${warehouse.message(code: 'order.status.label')}</label>
                 <g:select id="status"
                           name="status"
-                          from="${org.pih.warehouse.order.OrderStatus.list()}"
+                          from="${OrderStatus.list()}"
                           class="select2"
                           optionValue="${{ format.metadata(obj: it) }}"
                           value="${params.status}"
@@ -41,16 +46,40 @@
                                          data-allow-clear="true"
                                          data-ajax--cache="true"/>
             </div>
-            <div class="filter-list-item">
-                <label><warehouse:message code="order.destination.label"/></label>
-                <g:selectLocationViaAjax id="destination"
-                                         name="destination"
-                                         class="ajaxSelect2"
-                                         noSelection="['':'']"
-                                         value="${params.destination}"
-                                         data-ajax--url="${request.contextPath }/json/findLocations?activityCode=${org.pih.warehouse.core.ActivityCode.PLACE_ORDER}"
-                                         data-allow-clear="true"/>
-            </div>
+            <g:if test="${params.orderType == OrderTypeCode.PURCHASE_ORDER.name()}">
+                <div class="filter-list-item">
+                    <label><warehouse:message code="order.destination.label"/></label>
+                    <g:selectLocationViaAjax id="destination"
+                                             name="destination"
+                                             class="ajaxSelect2"
+                                             noSelection="['':'']"
+                                             value="${params.destination}"
+                                             data-ajax--url="${request.contextPath }/json/findLocations?activityCode=${org.pih.warehouse.core.ActivityCode.RECEIVE_STOCK}"
+                                             data-allow-clear="true"/>
+                </div>
+                <div class="filter-list-item">
+                    <label><warehouse:message code="order.destinationParty.label"/></label>
+                    <g:selectOrganization name="destinationParty"
+                                          id="destinationParty"
+                                          value="${params.destinationParty}"
+                                          roleTypes="[org.pih.warehouse.core.RoleType.ROLE_BUYER]"
+                                          noSelection="['':'']"
+                                          class="chzn-select-deselect"
+                                          disabled="${isCentralPurchasingEnabled}" />
+                </div>
+            </g:if>
+            <g:elseif test="${params.orderType == Constants.PUTAWAY_ORDER}">
+                <div class="filter-list-item">
+                    <label><warehouse:message code="order.destination.label"/></label>
+                    <g:selectLocationViaAjax id="destination"
+                                             name="destination"
+                                             class="ajaxSelect2"
+                                             noSelection="['':'']"
+                                             value="${params.destination}"
+                                             data-ajax--url="${request.contextPath }/json/findLocations?activityCode=${org.pih.warehouse.core.ActivityCode.PLACE_ORDER}"
+                                             data-allow-clear="true"/>
+                </div>
+            </g:elseif>
             <div class="filter-list-item">
                 <label><warehouse:message code="order.orderedBy.label"/></label>
                 <g:selectPersonViaAjax id="orderedBy"
@@ -104,10 +133,27 @@
                 <button type="submit" class="button icon search" name="search" value="true">
                     <warehouse:message code="default.search.label"/>
                 </button>
-                <button name="format" value="csv" class="button">
-                    <img src="${resource(dir: 'images/icons/silk', file: 'page_excel.png')}" />&nbsp;
-                    <warehouse:message code="order.downloadOrderLineDetails.label" default="Download order line details"/>
-                </button>
+                <span class="action-menu" style="margin-left: 15px">
+                    <button class="action-btn button">
+                        <img src="${createLinkTo(dir:'images/icons/silk',file:'page_white_excel.png')}" />&nbsp;
+                    ${warehouse.message(code: 'default.button.download.label')}
+                        <img src="${resource(dir: 'images/icons/silk', file: 'bullet_arrow_down.png')}" />
+                    </button>
+                    <div class="actions">
+                        <div class="action-menu-item download-subbuttons">
+                            <button name="format" value="csv">
+                                <img src="${resource(dir: 'images/icons/silk', file: 'page_white_excel.png')}" />
+                                <warehouse:message code="order.downloadOrderLineDetails.label" default="Download order line details"/>
+                            </button>
+                        </div>
+                        <div class="action-menu-item download-subbuttons">
+                            <button name="downloadOrders" value="csv">
+                                <img src="${resource(dir: 'images/icons/silk', file: 'page_white_excel.png')}" />
+                                <warehouse:message code="order.downloadOrders" default="Download orders"/>
+                            </button>
+                        </div>
+                    </div>
+                </span>
                 <g:link controller="order" action="list" class="button icon reload">
                     <warehouse:message code="default.button.cancel.label"/>
                 </g:link>

@@ -10,6 +10,7 @@
 package org.pih.warehouse.inventory
 
 import grails.validation.Validateable
+import org.pih.warehouse.api.AvailableItem
 import org.pih.warehouse.core.DefaultNullableCommand
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.product.Product
@@ -26,6 +27,7 @@ class StockCardCommand extends DefaultNullableCommand {
     Inventory inventory
     InventoryLevel inventoryLevel
     Integer totalQuantity
+    Integer totalQuantityAvailableToPromise
 
     // Current stock section
     List<InventoryItem> lotNumberList
@@ -35,7 +37,7 @@ class StockCardCommand extends DefaultNullableCommand {
     Map<Transaction, List<TransactionEntry>> transactionEntriesByTransactionMap
     Map<InventoryItem, List<TransactionEntry>> transactionEntriesByInventoryItemMap
     Map<InventoryItem, Integer> quantityByInventoryItemMap
-    List quantityByBinLocation
+    List<AvailableItem> availableItems
 
     Map requisitionMap = [:]
     Map orderMap = [:]

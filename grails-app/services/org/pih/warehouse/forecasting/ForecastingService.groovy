@@ -18,6 +18,7 @@ import org.pih.warehouse.product.Category
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.DateUtil
 
+import java.math.RoundingMode
 import java.sql.Timestamp
 import java.text.DateFormatSymbols
 import java.text.NumberFormat
@@ -27,9 +28,10 @@ class ForecastingService {
     def dataSource
     GrailsApplication grailsApplication
     def inventoryService
+    def grailsApplication
+    def productAvailabilityService
 
-    def getDemand(Location origin, Product product) {
-
+    def getDemand(Location origin, Location destination, Product product) {
         boolean forecastingEnabled = Holders.config.openboxes.forecasting.enabled ?: false
         Integer demandPeriod = grailsApplication.config.openboxes.forecasting.demandPeriod ?: 365
         if (forecastingEnabled) {
@@ -38,36 +40,38 @@ class ForecastingService {
                 defaultDateRange.startDate = defaultDateRange.endDate - demandPeriod.days
             }
 
-            def rows = getDemandDetails(origin, product, defaultDateRange.startDate, defaultDateRange.endDate)
+            def rows = getDemandDetails(origin, destination, product, defaultDateRange.startDate, defaultDateRange.endDate)
             def totalDemand = rows.sum { it.quantity_demand } ?: 0
             def dailyDemand = (totalDemand && demandPeriod) ? (totalDemand / demandPeriod) : 0
             def monthlyDemand = totalDemand / Math.floor((demandPeriod / 30))
-            def quantityOnHand = inventoryService.getQuantityOnHand(origin, product)
+            def quantityOnHand = productAvailabilityService.getQuantityOnHand(product, origin)
             def onHandMonths = monthlyDemand ? quantityOnHand / monthlyDemand : 0
-
             return [
-                    totalDemand  : totalDemand,
-                    totalDays    : demandPeriod,
-                    dailyDemand  : dailyDemand,
-                    monthlyDemand: "${NumberFormat.getIntegerInstance().format(monthlyDemand)}",
-                    onHandMonths: onHandMonths
+                totalDemand  : totalDemand,
+                totalDays    : demandPeriod,
+                dailyDemand  : dailyDemand,
+                monthlyDemand: new BigDecimal(monthlyDemand).setScale(0, RoundingMode.HALF_UP),
+                onHandMonths : onHandMonths
             ]
         }
+        return [:]
     }
 
     def getDemandDetails(Location origin, Product product) {
         Date today = new Date()
-        Integer demandPeriod = Holders.config.openboxes.forecasting.demandPeriod?:365
-        return getDemandDetails(origin, product, today - demandPeriod, today)
+        Integer demandPeriod = grailsApplication.config.openboxes.forecasting.demandPeriod ?: 365
+        return getDemandDetails(origin, null, product, today - demandPeriod, today)
     }
 
-    def getDemandDetails(Location origin, Product product, Date startDate, Date endDate) {
+    def getDemandDetails(Location origin, Location destination, Product product, Date startDate, Date endDate) {
         List data = []
         boolean forecastingEnabled = Holders.config.openboxes.forecasting.enabled ?: false
         if (forecastingEnabled) {
             Map params = [startDate: startDate, endDate: endDate]
             String query = """
                 select 
+                    request_id,
+                    request_item_id,
                     request_status,
                     request_number,
                     DATE_FORMAT(date_issued, '%b %Y') as month_year,
@@ -97,6 +101,10 @@ class ForecastingService {
                 query += " AND origin_id = :originId"
                 params << [originId: origin.id]
             }
+            if (destination) {
+                query += " AND destination_id = :destinationId"
+                params << [destinationId: destination.id]
+            }
 
             Sql sql = new Sql(dataSource)
             try {
@@ -108,45 +116,6 @@ class ForecastingService {
         }
         return data
     }
-
-    def getDemandDetailsForDemandTab(Location origin, Location destination, Product product, Date startDate, Date endDate) {
-        List data = []
-        Map params = [startDate: startDate, endDate: endDate, productId: product.id, originId: origin.id]
-        String query = """
-            select 
-                request_id,
-                request_item_id,
-                request_status,
-                request_number,
-                date_requested,
-                date_issued,
-                origin_name,
-                destination_name,
-                product_code,
-                product_name,
-                quantity_requested,
-                quantity_demand,
-                reason_code_classification
-            FROM product_demand_details
-            WHERE date_issued BETWEEN :startDate AND :endDate
-            AND product_id = :productId
-            AND origin_id = :originId
-            """
-        if (destination) {
-            query += " AND destination_id = :destinationId"
-            params << [destinationId: destination.id]
-        }
-
-        Sql sql = new Sql(dataSource)
-        try {
-            data = sql.rows(query, params)
-
-        } catch (Exception e) {
-            log.error("Unable to execute query: " + e.message, e)
-        }
-        return data
-    }
-
 
     def getAvailableDestinationsForDemandDetails(Location origin, Product product, Date startDate, Date endDate) {
         List data = []
@@ -174,8 +143,8 @@ class ForecastingService {
 
     def getDemandSummary(Location origin, Product product) {
         List data = []
-        Integer demandPeriod = Holders.config.openboxes.forecasting.demandPeriod?:365
-        boolean forecastingEnabled = Holders.config.openboxes.forecasting.enabled ?: false
+        Integer demandPeriod = grailsApplication.config.openboxes.forecasting.demandPeriod ?: 365
+        boolean forecastingEnabled = grailsApplication.config.openboxes.forecasting.enabled ?: false
         if (forecastingEnabled) {
             String query = """
                 select 
@@ -275,6 +244,7 @@ class ForecastingService {
                 product_name,
                 quantity_requested,
                 quantity_picked,
+                reason_code,
                 reason_code_classification,
                 quantity_demand
             FROM product_demand_details
@@ -332,20 +302,158 @@ class ForecastingService {
 
         data = data.collect {
             [
-                    productCode      : it?.product_code,
-                    productName      : it?.product_name,
-                    origin           : it?.origin_name,
-                    requestNumber    : it?.request_number,
-                    destination      : it?.destination_name,
-                    dateIssued       : it?.date_issued,
-                    dateRequested    : it?.date_requested,
-                    quantityRequested: it?.quantity_requested ?: 0,
-                    quantityIssued   : it.quantity_picked ?: 0,
-                    quantityDemand   : it?.quantity_demand ?: 0,
-                    reasonCode       : it?.reason_code_classification,
+                    productCode             : it?.product_code,
+                    productName             : it?.product_name,
+                    origin                  : it?.origin_name,
+                    requestNumber           : it?.request_number,
+                    destination             : it?.destination_name,
+                    dateIssued              : it?.date_issued,
+                    dateRequested           : it?.date_requested,
+                    quantityRequested       : it?.quantity_requested ?: 0,
+                    quantityIssued          : it?.quantity_picked ?: 0,
+                    quantityDemand          : it?.quantity_demand ?: 0,
+                    reasonCode              : it?.reason_code,
+                    reasonCodeClassification: it?.reason_code_classification,
             ]
         }
         return data
     }
 
+    def getDailyDemand(Location location, def demandDays) {
+        List data = []
+        String query = """
+            SELECT
+                product_id,
+                origin_id AS location_id,
+                SUM(quantity_demand) / :demandDays AS average_daily_demand
+            FROM product_demand_details
+            WHERE origin_id = :locationId
+                AND date_issued > DATE_SUB(CURRENT_DATE, INTERVAL :demandDays DAY)
+            GROUP BY product_id, location_id
+            """
+
+        Sql sql = new Sql(dataSource)
+
+        try {
+            data = sql.rows(query, [locationId: location.id, demandDays: demandDays])
+        } catch (Exception e) {
+            log.error("Unable to execute query: " + e.message, e)
+        }
+
+        return data
+    }
+
+    def getProductExpirySummary(Location location, def daysBeforeExpiration) {
+        List data = []
+        Map params = [locationId: location.id, daysBeforeExpiration: daysBeforeExpiration]
+        String query = """
+            SELECT 
+                p_a.product_id,
+                p_a.location_id,
+                SUM(p_a.quantity_on_hand) AS quantity_on_hand
+            FROM product_availability AS p_a
+            JOIN inventory_item i ON i.id = p_a.inventory_item_id
+            WHERE i.expiration_date < DATE_ADD(CURRENT_DATE, INTERVAL :daysBeforeExpiration DAY)
+            AND p_a.location_id = :locationId
+            GROUP BY p_a.product_id, p_a.location_id
+            """
+
+        Sql sql = new Sql(dataSource)
+
+        try {
+            data = sql.rows(query, params)
+        } catch (Exception e) {
+            log.error("Unable to execute query: " + e.message, e)
+        }
+
+        return data
+    }
+
+    def getProductExpiryAndAverageDailyDemandSummary(Location location, def daysBeforeExpiration) {
+        List data = []
+        Map params = [locationId: location.id, daysBeforeExpiration: daysBeforeExpiration]
+        String query = """
+            SELECT 
+                product_id,
+                location_id,
+                expiration_date,
+                quantity_on_hand,
+                average_daily_demand
+            FROM product_expiry_summary
+            WHERE expiration_date < DATE_ADD(CURRENT_DATE, INTERVAL :daysBeforeExpiration DAY)
+            AND location_id = :locationId
+            """
+        Sql sql = new Sql(dataSource)
+        try {
+            data = sql.rows(query, params)
+        } catch (Exception e) {
+            log.error("Unable to execute query: " + e.message, e)
+        }
+
+        return data
+    }
+
+    def getProductExpiryProjectedSummary(Location location, def daysBeforeExpiration) {
+        def data = getProductExpiryAndAverageDailyDemandSummary(location, daysBeforeExpiration)
+        def stockByProduct = data.groupBy { it.product_id }
+
+        def productExpirySummary = stockByProduct.collect { prodId, items ->
+            def sortedItems = items.sort { it.expiration_date }
+            def startDate = new Date()
+            def qtyExpired = 0
+            def qtyCantUse = 0
+
+            sortedItems.each { item ->
+                def qtyCanUse = 0
+
+                if (item.expiration_date.after(startDate)) {
+                    use(TimeCategory) {
+                        def duration = item.expiration_date - startDate
+
+                        qtyCanUse = duration.days * item.average_daily_demand
+                    }
+
+                    startDate = item.expiration_date
+                }
+
+                qtyCantUse += item.quantity_on_hand - qtyCanUse
+
+                if (qtyCantUse > 0) {
+                    qtyExpired += qtyCantUse
+                    qtyCantUse = 0
+                }
+            }
+
+            return [
+                    productId      : items[0].product_id,
+                    locationId     : location.id,
+                    quantityExpired: qtyExpired
+            ]
+        }
+
+        return productExpirySummary
+    }
+
+    def getProductExpiry(Location location, def daysBeforeExpiration, def productId) {
+        List data = []
+        Map params = [locationId: location.id, daysBeforeExpiration: daysBeforeExpiration, productId: productId]
+        String query = """
+            SELECT 
+                product_id,
+                quantity_on_hand,
+                average_daily_demand
+            FROM product_expiry_summary
+            WHERE expiration_date < DATE_ADD(CURRENT_DATE, INTERVAL :daysBeforeExpiration DAY)
+            AND location_id = :locationId
+            AND product_id = :productId
+            """
+        Sql sql = new Sql(dataSource)
+        try {
+            data = sql.rows(query, params)
+        } catch (Exception e) {
+            log.error("Unable to execute query: " + e.message, e)
+        }
+
+        return data
+    }
 }

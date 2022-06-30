@@ -12,6 +12,8 @@ package org.pih.warehouse.picklist
 import org.pih.warehouse.auth.AuthService
 import org.pih.warehouse.core.Person
 import org.pih.warehouse.core.User
+import org.pih.warehouse.order.Order
+import org.pih.warehouse.product.Product
 import org.pih.warehouse.requisition.Requisition
 import org.pih.warehouse.auth.AuthService
 import org.pih.warehouse.core.Person
@@ -47,7 +49,6 @@ class Picklist implements Serializable {
     String name
     String description        // a user-defined, searchable name for the order
 
-    Requisition requisition
     Person picker
 
     Date datePicked
@@ -58,7 +59,7 @@ class Picklist implements Serializable {
     User createdBy
     User updatedBy
 
-    static belongsTo = [requisition: Requisition]
+    static belongsTo = [requisition: Requisition, order: Order]
     static hasMany = [picklistItems: PicklistItem]
     static mapping = {
         id generator: 'uuid'
@@ -68,12 +69,32 @@ class Picklist implements Serializable {
     static constraints = {
         name(nullable: true)
         description(nullable: true)
+        requisition(nullable: true, validator: { value, obj -> value || obj.order })
+        order(nullable: true, validator: { value, obj -> value || obj.requisition })
         picker(nullable: true)
         datePicked(nullable: true)
         dateCreated(nullable: true)
         lastUpdated(nullable: true)
         createdBy(nullable: true)
         updatedBy(nullable: true)
+    }
+
+    static transients = ['pickablePicklistItems', 'pickablePicklistItemsByProductId']
+
+    def getPickablePicklistItems() {
+        return picklistItems.findAll { it.pickable }
+    }
+
+    def getPickablePicklistItemsByProductId() {
+        return pickablePicklistItems?.groupBy { it.inventoryItem?.product?.id }
+    }
+
+    def getPicklistItems(Product product) {
+        return picklistItems?.findAll { it.quantity && it.inventoryItem.product?.id == product?.id }
+    }
+
+    def getPicklistItemsByLot(Product product)  {
+        return getPicklistItems(product)?.groupBy {it.inventoryItem.lotNumber}
     }
 
     String toString() {

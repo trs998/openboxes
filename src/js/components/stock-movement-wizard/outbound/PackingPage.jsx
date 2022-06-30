@@ -1,13 +1,32 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import { Form } from 'react-final-form';
+
+import axios from 'axios';
 import arrayMutators from 'final-form-arrays';
-import PropTypes from 'prop-types';
-import Alert from 'react-s-alert';
 import update from 'immutability-helper';
+import _ from 'lodash';
+import PropTypes from 'prop-types';
 import { confirmAlert } from 'react-confirm-alert';
+import { Form } from 'react-final-form';
 import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import Alert from 'react-s-alert';
+
+import { hideSpinner, showSpinner } from 'actions';
+import ArrayField from 'components/form-elements/ArrayField';
+import LabelField from 'components/form-elements/LabelField';
+import SelectField from 'components/form-elements/SelectField';
+import TextField from 'components/form-elements/TextField';
+import PackingSplitLineModal from 'components/stock-movement-wizard/modals/PackingSplitLineModal';
+import AlertMessage from 'utils/AlertMessage';
+import {
+  flattenRequest,
+  handleError,
+  handleSuccess,
+} from 'utils/apiClient';
+import { renderFormField } from 'utils/form-utils';
+import { debounceUsersFetch } from 'utils/option-utils';
+import renderHandlingIcons from 'utils/product-handling-icons';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-confirm-alert/src/react-confirm-alert.css';
 
@@ -60,7 +79,7 @@ const FIELDS = {
           ),
         },
       },
-      binLocationName: {
+      binLocation: {
         type: LabelField,
         label: 'react.stockMovement.binLocation.label',
         defaultMessage: 'Bin location',
@@ -68,6 +87,14 @@ const FIELDS = {
         getDynamicAttr: ({ hasBinLocationSupport }) => ({
           hide: !hasBinLocationSupport,
         }),
+        attributes: {
+          showValueTooltip: true,
+          formatValue: fieldValue => fieldValue && (
+            <div className="d-flex">
+              {fieldValue.zoneName ? <div className="text-truncate" style={{ minWidth: 30, flexShrink: 20 }}>{fieldValue.zoneName}</div> : ''}
+              <div className="text-truncate">{fieldValue.zoneName ? `: ${fieldValue.name}` : fieldValue.name}</div>
+            </div>),
+        },
       },
       lotNumber: {
         type: LabelField,
@@ -158,6 +185,8 @@ const FIELDS = {
   },
 };
 
+const apiClient = axios.create({});
+
 function validate(values) {
   const errors = {};
   errors.packPageItems = [];
@@ -182,11 +211,16 @@ class PackingPage extends Component {
       values: { ...this.props.initialValues, packPageItems: [] },
       totalCount: 0,
       isFirstPageLoaded: false,
+      showAlert: false,
+      alertMessage: '',
     };
 
     this.saveSplitLines = this.saveSplitLines.bind(this);
     this.isRowLoaded = this.isRowLoaded.bind(this);
     this.loadMoreRows = this.loadMoreRows.bind(this);
+    this.handleValidationErrors = this.handleValidationErrors.bind(this);
+
+    apiClient.interceptors.response.use(handleSuccess, this.handleValidationErrors);
 
     this.debouncedUsersFetch =
       debounceUsersFetch(this.props.debounceTime, this.props.minSearchLength);
@@ -337,14 +371,8 @@ class PackingPage extends Component {
     return Promise.resolve();
   }
 
-  /**
-   * Saves current stock movement progress (line items) and goes to the next stock movement step.
-   * @param {object} formValues
-   * @public
-   */
-  nextPage(formValues) {
-    this.props.showSpinner();
-    this.savePackingData(formValues.packPageItems)
+  saveAndTransition(formValues) {
+    return this.savePackingData(formValues.packPageItems)
       .then(() => {
         this.transitionToNextStep()
           .then(() => {
@@ -353,6 +381,37 @@ class PackingPage extends Component {
           })
           .catch(() => this.props.hideSpinner());
       })
+      .catch(() => this.props.hideSpinner());
+  }
+
+  validatePicklist() {
+    const url = `/openboxes/api/stockMovements/${this.state.values.stockMovementId}/validatePicklist`;
+    return apiClient.get(url);
+  }
+
+  handleValidationErrors(error) {
+    if (error.response.status === 400) {
+      const alertMessage = _.join(_.get(error, 'response.data.errorMessages', ''), ' ');
+      this.setState({ alertMessage, showAlert: true });
+
+      return Promise.reject(error);
+    }
+
+    return handleError(error);
+  }
+
+  /**
+   * Saves current stock movement progress (line items) and goes to the next stock movement step.
+   * @param {object} formValues
+   * @public
+   */
+  nextPage(formValues) {
+    this.props.showSpinner();
+    this.validatePicklist()
+      .then(() =>
+        this.saveAndTransition(formValues)
+          .then(() => this.props.nextPage(formValues))
+          .catch(() => this.props.hideSpinner()))
       .catch(() => this.props.hideSpinner());
   }
 
@@ -415,6 +474,7 @@ class PackingPage extends Component {
         validate={validate}
         render={({ handleSubmit, values, invalid }) => (
           <div className="d-flex flex-column">
+            <AlertMessage show={this.state.showAlert} message={this.state.alertMessage} danger />
             { !showOnly ?
               <span className="buttons-container">
                 <button
@@ -430,7 +490,7 @@ class PackingPage extends Component {
                   type="button"
                   disabled={invalid}
                   onClick={() => this.save(values)}
-                  className="float-right mb-1 btn btn-outline-secondary align-self-end btn-xs ml-1"
+                  className="float-right mb-1 btn btn-outline-secondary align-self-end btn-xs ml-3"
                 >
                   <span><i className="fa fa-save pr-2" />
                     <Translate id="react.default.button.save.label" defaultMessage="Save" />

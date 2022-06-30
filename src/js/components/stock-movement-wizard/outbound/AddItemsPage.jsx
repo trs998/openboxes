@@ -1,15 +1,28 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import PropTypes from 'prop-types';
-import fileDownload from 'js-file-download';
-import { Form } from 'react-final-form';
+
 import arrayMutators from 'final-form-arrays';
-import Alert from 'react-s-alert';
-import { confirmAlert } from 'react-confirm-alert';
-import { getTranslate } from 'react-localize-redux';
-import moment from 'moment';
 import update from 'immutability-helper';
+import fileDownload from 'js-file-download';
+import _ from 'lodash';
+import moment from 'moment';
+import PropTypes from 'prop-types';
+import { confirmAlert } from 'react-confirm-alert';
+import { Form } from 'react-final-form';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import Alert from 'react-s-alert';
+
+import { fetchUsers, hideSpinner, showSpinner } from 'actions';
+import ArrayField from 'components/form-elements/ArrayField';
+import ButtonField from 'components/form-elements/ButtonField';
+import LabelField from 'components/form-elements/LabelField';
+import SelectField from 'components/form-elements/SelectField';
+import TextField from 'components/form-elements/TextField';
+import apiClient from 'utils/apiClient';
+import { renderFormField } from 'utils/form-utils';
+import { debounceProductsFetch } from 'utils/option-utils';
+import renderHandlingIcons from 'utils/product-handling-icons';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-confirm-alert/src/react-confirm-alert.css';
 
@@ -37,8 +50,10 @@ const DELETE_BUTTON_FIELD = {
     fieldValue, removeItem, removeRow, showOnly, updateTotalCount,
   }) => ({
     onClick: fieldValue && fieldValue.id ? () => {
-      removeItem(fieldValue.id).then(() => removeRow());
-      updateTotalCount(-1);
+      removeItem(fieldValue.id).then(() => {
+        updateTotalCount(-1);
+        removeRow();
+      });
     } : () => { updateTotalCount(-1); removeRow(); },
     disabled: (fieldValue && fieldValue.statusCode === 'SUBSTITUTED') || showOnly,
   }),
@@ -91,10 +106,10 @@ const NO_STOCKLIST_FIELDS = {
           showValueTooltip: true,
           className: 'text-left',
           optionRenderer: option => (
-            <strong style={{ color: option.color ? option.color : 'black' }} className="d-flex align-items-center">
+            <strong style={{ color: option.color || 'black' }} className="d-flex align-items-center">
               {option.label}
               &nbsp;
-              {renderHandlingIcons(option.value ? option.value.handlingIcons : [])}
+              {renderHandlingIcons(option.handlingIcons)}
             </strong>
           ),
           valueRenderer: option => (
@@ -1107,7 +1122,8 @@ class AddItemsPage extends Component {
                   }}
                   className="btn btn-outline-primary btn-form float-right btn-xs"
                   disabled={
-                    !_.some(values.lineItems, item => !_.isEmpty(item)) || invalid || showOnly
+                    values.lineItems.length === 0 || (values.lineItems.length === 1 && !('product' in values.lineItems[0])) ||
+                    invalid || showOnly
                   }
                 ><Translate id="react.default.button.next.label" defaultMessage="Next" />
                 </button>

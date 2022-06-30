@@ -8,7 +8,6 @@
  * You must not remove this notice, or any other, from this software.
  **/
 package org.pih.warehouse.core
-
 /**
  *
  */
@@ -16,6 +15,7 @@ enum LocationTypeCode {
 
     // Storage
     DEPOT(10),          // storage location
+    ZONE(16),
     BIN_LOCATION(20),   // @deprecated sub-location under depot
     INTERNAL(21),       // sub-location under depot
 
@@ -46,4 +46,23 @@ enum LocationTypeCode {
         [DEPOT, CONSUMER, DISPENSARY, WARD, BIN_LOCATION, INTERNAL, SUPPLIER, DONOR, VIRTUAL, DISPOSAL, DISTRIBUTOR]
     }
 
+    static listFacilityTypeCodes() {
+        return [DEPOT, DISPENSARY, WARD]
+    }
+
+    static listInternalTypeCodes() {
+        return [BIN_LOCATION, INTERNAL]
+    }
+
+    static listExternalLocationTypeCodes() {
+        return [SUPPLIER, DISTRIBUTOR, DONOR, CONSUMER]
+    }
+
+    static listVirtual() {
+        return [DISPOSAL, VIRTUAL]
+    }
+
+    static listZoneTypeCodes() {
+        return [ZONE]
+    }
 }

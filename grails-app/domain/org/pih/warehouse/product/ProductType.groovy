@@ -11,14 +11,60 @@ package org.pih.warehouse.product
 
 class ProductType {
 
+    String id
     String name
     ProductTypeCode productTypeCode
+
+    String code
+    String productIdentifierFormat
+    Integer sequenceNumber = 0
 
     Date dateCreated
     Date lastUpdated
 
+    static hasMany = [supportedActivities: ProductActivityCode, requiredFields: ProductField, displayedFields: ProductField]
+
+    static mapping = {
+        id generator: 'uuid'
+    }
+
     static constraints = {
-        name(blank: false)
+        name(blank: false, unique: true)
+        code(nullable: true, unique: true)
         productTypeCode(nullable: false)
+        productIdentifierFormat(nullable: true)
+        sequenceNumber(nullable: true)
+    }
+
+    static transients = ["nextSequenceNumber"]
+
+    Boolean isFieldDisplayed(ProductField field) {
+        if (!displayedFields || displayedFields.isEmpty()) {
+            return true
+        }
+
+        return displayedFields.contains(field)
+    }
+
+    Boolean isAnyFieldDisplayed(List<ProductField> fields) {
+        if (!displayedFields || displayedFields.isEmpty()) {
+            return true
+        }
+
+        return fields?.any{ displayedFields.contains(it) }
+    }
+
+    static List listAllBySupportedActivity(List<ProductActivityCode> supportedActivities) {
+        return ProductType.findAll(
+            "from ProductType pt where (:supportedActivities in elements(pt.supportedActivities))",
+            [supportedActivities: supportedActivities*.toString()]
+        )
+    }
+
+    Integer getNextSequenceNumber() {
+        if (!sequenceNumber) {
+            return 1
+        }
+        return sequenceNumber + 1
     }
 }

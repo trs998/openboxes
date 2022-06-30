@@ -14,20 +14,26 @@ enum DocumentCode {
     IMAGE,
     THUMBNAIL,
     PRODUCT_MANUAL,
+    PURCHASE_ORDER_TEMPLATE,
     SHIPPING_DOCUMENT,
     SHIPPING_TEMPLATE,
     ZEBRA_TEMPLATE,
     EMAIL_TEMPLATE,
+    DATA_EXPORT,
+    INVOICE_TEMPLATE,
 
     static list() {
         [
                 SHIPPING_TEMPLATE,
                 THUMBNAIL,
                 PRODUCT_MANUAL,
+                PURCHASE_ORDER_TEMPLATE,
                 SHIPPING_DOCUMENT,
                 SHIPPING_TEMPLATE,
                 ZEBRA_TEMPLATE,
                 EMAIL_TEMPLATE,
+                DATA_EXPORT,
+                INVOICE_TEMPLATE,
         ]
     }
 

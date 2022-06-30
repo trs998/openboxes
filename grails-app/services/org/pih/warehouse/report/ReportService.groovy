@@ -22,8 +22,11 @@ import org.pih.warehouse.inventory.Inventory
 import org.pih.warehouse.inventory.InventoryItem
 import org.pih.warehouse.inventory.Transaction
 import org.pih.warehouse.inventory.TransactionEntry
+import org.pih.warehouse.order.OrderItem
+import org.pih.warehouse.product.Category
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.reporting.DateDimension
+import org.pih.warehouse.requisition.RequisitionItem
 import org.springframework.context.ApplicationContext
 import org.springframework.context.ApplicationContextAware
 import util.InventoryUtil
@@ -40,6 +43,8 @@ class ReportService implements ApplicationContextAware {
 
     GrailsApplication grailsApplication
     def userService
+    def orderService
+    def shipmentService
 
 
     ApplicationContext applicationContext
@@ -480,7 +485,7 @@ class ReportService implements ApplicationContextAware {
             join date_dimension transaction_date_dimension on transaction_date_dimension.date = date(transaction.transaction_date)
             join transaction_type_dimension on transaction_type_dimension.transaction_type_id = transaction_type.id
             where transaction.order_id is null 
-            or `order`.order_type_code not in ('TRANSFER_ORDER') ;
+            or `order`.order_type_id not in ('PUTAWAY_ORDER') ;
         """
         dataService.executeStatements([deleteStatement, insertStatement])
     }
@@ -646,6 +651,7 @@ class ReportService implements ApplicationContextAware {
                         quantity_modified,
                         quantity_picked,
                         quantity_demand,
+                        reason_code,
                         reason_code_classification
                     FROM product_demand;""",
                 "DROP TABLE IF EXISTS product_demand_details;",
@@ -660,13 +666,13 @@ class ReportService implements ApplicationContextAware {
     List getOnOrderSummary(Location location) {
         String query = """
             select 
-                oos.product_code as productCode, 
-                oos.name as productName, 
+                product.product_code as productCode, 
+                product.name as productName, 
                 oos.quantity_ordered_not_shipped as qtyOrderedNotShipped,
                 oos.quantity_shipped_not_received as qtyShippedNotReceived, 
                 ps.quantity_on_hand as qtyOnHand
             from on_order_summary oos
-            join product on oos.product_code = product.product_code
+            join product on oos.product_id = product.id
             left outer join product_snapshot ps on (product.id = ps.product_id 
                 and ps.location_id = oos.destination_id)
             where destination_id = :locationId
@@ -686,6 +692,139 @@ class ReportService implements ApplicationContextAware {
                     totalOnHandAndOnOrder: qtyOrderedNotShipped + qtyShippedNotReceived + qtyOnHand,
             ]
         }
+        return data
+    }
+
+    Map getQuantityOnOrder (String locationId, List<String> productIds) {
+        def products = []
+        productIds.each { products << Product.findById(it) }
+        def location = Location.get(locationId)
+        def items = orderService.getPendingInboundOrderItems(location, products)
+        items += shipmentService.getPendingInboundShipmentItems(location, products)
+        def itemsMap = [:]
+
+        items.collect {
+            def isOrderItem = it instanceof OrderItem
+            [
+                    productId  : it.product?.id,
+                    qtyOrderedNotShipped : isOrderItem ? (it.quantityRemaining * it.quantityPerUom) : 0,
+                    qtyShippedNotReceived : isOrderItem ? 0 : it.quantityRemaining.toInteger(),
+            ]
+        }.groupBy { it.productId }.collect { k, v ->
+            itemsMap.put(k, [
+                    qtyOrderedNotShipped : v.qtyOrderedNotShipped.sum(),
+                    qtyShippedNotReceived : v.qtyShippedNotReceived.sum(),
+            ]
+            )
+        }
+
+        return itemsMap
+    }
+
+    List getOnOrderData(String locationId, List<String> productIds) {
+        def onOrder = getQuantityOnOrder(locationId, productIds)
+
+        String query = """
+            select
+                oos.product_id as productId,
+                ps.quantity_on_hand as qtyOnHand
+            from on_order_summary oos
+            join product on oos.product_id = product.id
+            left outer join product_snapshot ps on (product.id = ps.product_id 
+                and ps.location_id = oos.destination_id)
+            where destination_id = :locationId and oos.product_id in (${productIds.collect { "'$it'" }.join(',')})
+            """
+        def results = dataService.executeQuery(query, [locationId: locationId])
+        def data = results.collect { it ->
+            Integer qtyOrderedNotShipped = onOrder[it.productId] ? onOrder[it.productId].qtyOrderedNotShipped.toInteger() : 0
+            Integer qtyShippedNotReceived = onOrder[it.productId] ? onOrder[it.productId].qtyShippedNotReceived.toInteger() : 0
+            [
+                    productId            : it.productId,
+                    totalOnOrder         : qtyOrderedNotShipped + qtyShippedNotReceived,
+                    totalOnHand          : it.qtyOnHand ? it.qtyOnHand.toInteger() : 0,
+            ]
+        }
+        return data
+    }
+
+    def getForecastReport(Map params) {
+        List data = []
+        boolean forecastingEnabled = grailsApplication.config.openboxes.forecasting.enabled ?: false
+        if (forecastingEnabled) {
+            String query = """
+            select 
+                pdd.product_id,
+                pdd.quantity_demand
+            FROM product_demand_details pdd
+            """
+
+            if (params.category && params.category != "null") {
+                query += " JOIN product ON product.id = pdd.product_id"
+            }
+            if (params.tags && params.tags != "null") {
+                query += " LEFT JOIN product_tag ON product_tag.product_id = pdd.product_id"
+            }
+            if (params.catalogs && params.catalogs != "null") {
+                query += " LEFT JOIN product_catalog_item ON product_catalog_item.product_id = pdd.product_id"
+            }
+
+            query += " WHERE date_issued BETWEEN :startDate AND :endDate AND pdd.origin_id = :originId"
+
+            if (params.locations && params.locations != "null") {
+                def destinations = []
+                params.locations.getClass().isArray() ? params.locations.each { destinations << it } : destinations << params.locations
+                query += " AND pdd.destination_id in (${destinations.collect { "'$it'" }.join(',')})"
+            }
+
+            if (params.category && params.category != "null") {
+                def categories = []
+                if (params.category.getClass().isArray()) {
+                    params.category.each {
+                        def category = Category.get(it)
+                        if (category) {
+                            categories += category.children
+                            categories << category
+                        }
+                    }
+                } else {
+                    def category = Category.get(params.category)
+                    if (category) {
+                        categories += category.children
+                        categories << category
+                    }
+                }
+
+                categories = categories.unique()
+                query += " AND product.category_id in (${categories.collect { "'$it.id'" }.join(',')})"
+            }
+
+            if (params.tags && params.tags != "null") {
+                def tags = []
+                params.tags.getClass().isArray() ? params.tags.each { tags << it } : tags << params.tags
+                query += " AND product_tag.tag_id in (${tags.collect { "'$it'" }.join(',')})"
+            }
+
+            if (params.catalogs && params.catalogs != "null") {
+                def catalogs = []
+                params.catalogs.getClass().isArray() ? params.catalogs.each { catalogs << it } : catalogs << params.catalogs
+                query += " AND product_catalog_item.product_catalog_id in (${catalogs.collect { "'$it'" }.join(',')})"
+            }
+
+            def results = dataService.executeQuery(query, params)
+            if (results) {
+                def onOrderData = getOnOrderData(params.originId, results.collect{it.product_id}.unique())
+                def monthsInPeriod = (params.endDate - params.startDate) / 30
+                data = results.groupBy { it.product_id}.collect { productId, demandDetails ->
+                    [
+                            productId             : productId,
+                            totalOnOrder          : onOrderData.find {it.productId == productId}?.totalOnOrder ?: '',
+                            totalOnHand           : onOrderData.find {it.productId == productId}?.totalOnHand ?: '',
+                            averageMonthlyDemand  : demandDetails.collect {it.quantity_demand}.sum() / monthsInPeriod
+                    ]
+                }
+            }
+        }
+
         return data
     }
 }

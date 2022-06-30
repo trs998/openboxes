@@ -16,8 +16,8 @@ import org.grails.web.json.JSONObject
 import org.pih.warehouse.core.ActivityCode
 import org.pih.warehouse.core.Constants
 import org.pih.warehouse.core.Location
-import org.pih.warehouse.importer.ImportDataCommand
 import org.pih.warehouse.core.Person
+import org.pih.warehouse.importer.ImportDataCommand
 import org.pih.warehouse.inventory.InventoryItem
 import org.pih.warehouse.inventory.StockMovementService
 import org.pih.warehouse.picklist.PicklistItem
@@ -25,6 +25,7 @@ import org.pih.warehouse.product.Product
 import org.pih.warehouse.requisition.Requisition
 import org.pih.warehouse.requisition.RequisitionItem
 import org.pih.warehouse.requisition.RequisitionSourceType
+import org.pih.warehouse.shipping.Shipment
 
 @Transactional
 class StockMovementApiController {
@@ -35,21 +36,17 @@ class StockMovementApiController {
     def list() {
         int max = Math.min(params.max ? params.int('max') : 10, 1000)
         int offset = params.offset ? params.int("offset") : 0
-        def stockMovements = params.direction == "INBOUND" ?
-                stockMovementService.getInboundStockMovements(max, offset) :
-                stockMovementService.getOutboundStockMovements(max, offset)
+        String orderBy = params.orderBy ?: "requisition.dateRequested"
+        StockMovementDirection stockMovementDirection = params.direction ? params.direction as StockMovementDirection : null
+        Location destination = params.destination ? Location.get(params.destination) : null
 
-        stockMovements = stockMovements.collect { StockMovement stockMovement ->
-            Map json = stockMovement.toJson()
-            def excludes = params.list("exclude")
-            if (excludes) {
-                excludes.each { exclude ->
-                    json.remove(exclude)
-                }
-            }
-            return json
-        }
-        render([data: stockMovements] as JSON)
+        StockMovement stockMovement = new StockMovement()
+        stockMovement.stockMovementDirection = stockMovementDirection
+        stockMovement.destination = destination
+
+        def stockMovements = stockMovementService.getStockMovements(stockMovement, [max: max, offset: offset, orderBy: orderBy ])
+
+        render([data: stockMovements, totalCount: stockMovements?.totalCount] as JSON)
     }
 
     def read() {
@@ -78,11 +75,7 @@ class StockMovementApiController {
     def create(StockMovement stockMovement) {
         // Detect whether inbound or outbound stock movement
         def currentLocation = Location.get(session.warehouse.id)
-        StockMovementType stockMovementType = stockMovement.origin.equals(currentLocation) ?
-                StockMovementType.OUTBOUND : stockMovement.destination.equals(currentLocation) ?
-                        StockMovementType.INBOUND : null
 
-        stockMovement.stockMovementType = stockMovementType
         stockMovement.requestType = params.requestType
         stockMovement.sourceType = params.sourceType as RequisitionSourceType
         StockMovement newStockMovement = stockMovementService.createStockMovement(stockMovement)
@@ -151,7 +144,12 @@ class StockMovementApiController {
      */
     def removeAllItems() {
         Requisition requisition = Requisition.get(params.id)
-        stockMovementService.removeRequisitionItems(requisition)
+        Shipment shipment = Shipment.get(params.id)
+        if (requisition) {
+            stockMovementService.removeRequisitionItems(requisition)
+        } else {
+            stockMovementService.removeShipmentItems(shipment.shipmentItems)
+        }
         render status: 204
     }
 
@@ -161,7 +159,7 @@ class StockMovementApiController {
     def reviseItems() {
         StockMovement stockMovement = stockMovementService.getStockMovement(params.id)
         bindStockMovement(stockMovement, request.JSON)
-        List<EditPageItem> revisedItems = stockMovementService.reviseItems(stockMovement)
+        def revisedItems = stockMovementService.reviseItems(stockMovement)
         render([data: revisedItems] as JSON)
     }
 
@@ -207,7 +205,19 @@ class StockMovementApiController {
         render([data: stockMovement] as JSON)
     }
 
-    def exportPickListItems() {
+    def createPickList = {
+        stockMovementService.createPicklist(params.id)
+
+        render status: 200
+    }
+
+    def validatePicklist = {
+        stockMovementService.validatePicklist(params.id)
+
+        render status: 200
+    }
+
+    def exportPickListItems = {
         List<PickPageItem> pickPageItems = stockMovementService.getPickPageItems(params.id, null, null )
         List<PicklistItem> picklistItems = pickPageItems.inject([]) { result, pickPageItem ->
             result.addAll(pickPageItem.picklistItems)
@@ -306,6 +316,19 @@ class StockMovementApiController {
         }
 
         render([data: "Data will be imported successfully"] as JSON)
+    }
+
+    def getPendingRequisitionDetails = {
+        Location origin = Location.get(params.origin.id)
+        Product product = Product.get(params.product.id)
+        def stockMovementId = params.stockMovementId
+
+        if (!origin || !product) {
+            throw new IllegalArgumentException("Both origin location and product are required!")
+        }
+
+        def pendingRequisitionDetails = stockMovementService.getPendingRequisitionDetails(origin, product, stockMovementId)
+        render([data: pendingRequisitionDetails] as JSON)
     }
 
     /**

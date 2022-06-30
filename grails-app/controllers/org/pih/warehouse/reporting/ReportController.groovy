@@ -11,11 +11,11 @@ package org.pih.warehouse.reporting
 
 import grails.converters.JSON
 import grails.gorm.transactions.Transactional
-import grails.plugins.csv.CSVWriter
 import org.apache.commons.lang.StringEscapeUtils
 import org.pih.warehouse.api.StockMovement
 import org.pih.warehouse.api.StockMovementItem
 import org.pih.warehouse.core.Location
+import org.pih.warehouse.inventory.InventoryLevel
 import org.pih.warehouse.inventory.Transaction
 import org.pih.warehouse.order.OrderItem
 import org.pih.warehouse.report.ChecklistReportCommand
@@ -25,6 +25,10 @@ import org.pih.warehouse.report.MultiLocationInventoryReportCommand
 import org.quartz.JobKey
 import org.quartz.impl.StdScheduler
 import util.ReportUtil
+
+import java.math.RoundingMode
+import java.text.DateFormat
+import java.text.SimpleDateFormat
 
 @Transactional
 class ReportController {
@@ -108,8 +112,10 @@ class ReportController {
             csv += g.message(code: 'tag.label') + ","
             csv += g.message(code: 'inventoryItem.lotNumber.label') + ","
             csv += g.message(code: 'inventoryItem.expirationDate.label') + ","
+            csv += g.message(code: 'location.zone.label') + ","
             csv += g.message(code: 'location.binLocation.label') + ","
             csv += g.message(code: 'default.quantity.label') + ","
+            csv += g.message(code: 'default.quantityAvailableToPromise.label') + ","
             csv += g.message(code: 'product.unitCost.label') + ","
             csv += g.message(code: 'product.totalValue.label')
             csv += "\n"
@@ -131,8 +137,10 @@ class ReportController {
             csv += StringEscapeUtils.escapeCsv(binLocation?.product?.tagsToString()) + ","
             csv += StringEscapeUtils.escapeCsv(binLocation?.inventoryItem?.lotNumber) + ","
             csv += StringEscapeUtils.escapeCsv(expirationDate) + ","
+            csv += StringEscapeUtils.escapeCsv(binLocation?.binLocation?.zone?.name ?: '') + ","
             csv += StringEscapeUtils.escapeCsv(binLocation?.binLocation?.name ?: defaultBinLocation) + ","
             csv += binLocation.quantity + ","
+            csv += binLocation.quantityAvailableToPromise + ","
             csv += binLocation.unitCost + ","
             csv += binLocation.totalValue
             csv += "\n"
@@ -427,7 +435,7 @@ class ReportController {
                 String csv = dataService.generateCsv(lineItems)
                 response.setHeader("Content-disposition", "attachment; filename=\"StockMovementItems-CurrentStock.csv\"")
                 render(contentType: "text/csv", text: csv.toString(), encoding: "UTF-8")
-                return;
+                return
             }
         } catch (Exception e) {
             log.error("Unable to generate bin location report due to error: " + e.message, e)
@@ -465,16 +473,17 @@ class ReportController {
                     "Estimated Goods Ready Date" { it.estimatedGoodsReadyDate }
                     "Shipment Number" { it.shipmentNumber }
                     "Ship Date" { it.shipDate }
+                    "Expected Delivery Date" { it.expectedDeliveryDate }
                     "Shipment Type" { it.shipmentType }
                 })
 
                 items.sort { a,b ->
-                    a.product.productCode <=> b.product.productCode
+                    a.product?.productCode <=> b.product?.productCode
                 }.each {
                     def isOrderItem = it instanceof OrderItem
                     csv << [
-                            productCode  : it.product.productCode,
-                            productName  : it.product.name,
+                            productCode  : it.product?.productCode,
+                            productName  : it.product?.name,
                             qtyOrderedNotShipped : isOrderItem ? it.quantityRemaining * it.quantityPerUom : '',
                             qtyShippedNotReceived : isOrderItem ? '' : it.quantityRemaining,
                             orderNumber  : isOrderItem ? it.order.orderNumber : (it.shipment.isFromPurchaseOrder ? it.orderNumber : ''),
@@ -485,6 +494,7 @@ class ReportController {
                             estimatedGoodsReadyDate  : isOrderItem ? it.actualReadyDate?.format("MM/dd/yyyy") : '',
                             shipmentNumber  : isOrderItem ? '' : it.shipment.shipmentNumber,
                             shipDate  : isOrderItem ? '' : it.shipment.expectedShippingDate?.format("MM/dd/yyyy"),
+                            expectedDeliveryDate  : isOrderItem ? '' : it.shipment.expectedDeliveryDate?.format("MM/dd/yyyy"),
                             shipmentType  : isOrderItem ? '' : it.shipment.shipmentType.name
                     ]
                 }
@@ -535,11 +545,13 @@ class ReportController {
                         sw.append(locationName).append(",")
                     }
 
-                    sw.append("QoH Total")
+                    sw.append("QoH Total").append(",")
+                    sw.append("Quantity Available Total")
                     sw.append("\n")
                     command.entries.each { entry ->
                         if (entry.key) {
-                            def totalQuantity = entry.value?.values()?.sum()
+                            def totalQuantity = entry.value?.values()?.quantityOnHand?.sum()
+                            def totalQuantityAvailableToPromise = entry.value?.values()?.quantityAvailableToPromise?.sum()
                             def form = entry.key?.getProductCatalogs()?.collect {
                                 it.name
                             }?.join(",")
@@ -551,10 +563,11 @@ class ReportController {
                             sw.append('"' + (entry.key?.tagsToString() ?: "")?.toString()?.replace('"', '""') + '"').append(",")
 
                             command.locations?.each { location ->
-                                sw.append('"' + (entry.value[location?.id] != null ? entry.value[location?.id] : "").toString() + '"').append(",")
+                                sw.append('"' + (entry.value[location?.id] != null ? entry.value[location?.id]?.quantityOnHand?:0 : "").toString() + '"').append(",")
                             }
 
-                            sw.append('"' + (totalQuantity != null ? totalQuantity : "").toString() + '"')
+                            sw.append('"' + (totalQuantity != null ? totalQuantity : "").toString() + '"').append(",")
+                            sw.append('"' + (totalQuantityAvailableToPromise != null ? totalQuantityAvailableToPromise : "").toString() + '"')
                             sw.append("\n")
                         }
                     }
@@ -578,4 +591,134 @@ class ReportController {
         render(view: 'showRequestDetailReport', params: params)
     }
 
+    def showCycleCountReport = {
+        Location location = Location.load(session.warehouse.id)
+        List binLocations = inventoryService.getQuantityByBinLocation(location)
+        log.info "Returned ${binLocations.size()} bin locations for location ${location}"
+        String dateFormat = grailsApplication.config.openboxes.expirationDate.format
+
+        List rows = binLocations.collect { row ->
+
+            // Required in order to avoid lazy initialization exception that occurs because all
+            // of the querying / session work that was done above was executed in worker threads
+            Product product = Product.load(row?.product?.id)
+
+            def latestInventoryDate = row?.product?.latestInventoryDate(location.id) ?: row?.product.earliestReceivingDate(location.id)
+            Map dataRow = params.print ? [
+                            "Product code"        : StringEscapeUtils.escapeCsv(row?.product?.productCode),
+                            "Product name"        : row?.product.name ?: "",
+                            "Lot number"          : StringEscapeUtils.escapeCsv(row?.inventoryItem.lotNumber ?: ""),
+                            "Expiration date"     : row?.inventoryItem.expirationDate ? row?.inventoryItem.expirationDate.format(dateFormat) : "",
+                            "Bin location"        : StringEscapeUtils.escapeCsv(row?.binLocation?.name ?: ""),
+                            "OB QOH"              : row?.quantity ?: 0,
+                            "Physical QOH"        : "",
+                            "Comment"             : "",
+                            "Generic product"     : row?.genericProduct?.name ?: "",
+                            "Category"            : StringEscapeUtils.escapeCsv(row?.category?.name ?: ""),
+                            "Formularies"         : product.productCatalogs.join(", ") ?: "",
+                            "ABC Classification"  : StringEscapeUtils.escapeCsv(row?.product.getAbcClassification(location.id) ?: ""),
+                            "Status"              : g.message(code: "binLocationSummary.${row?.status}.label"),
+                            "Last Inventory Date" : latestInventoryDate ? latestInventoryDate.format(dateFormat) : "",
+                    ] : [
+                            productCode       : StringEscapeUtils.escapeCsv(row?.product?.productCode),
+                            productName       : row?.product.name ?: "",
+                            genericProduct    : row?.genericProduct?.name ?: "",
+                            category          : StringEscapeUtils.escapeCsv(row?.category?.name ?: ""),
+                            formularies       : product.productCatalogs.join(", ") ?: "",
+                            lotNumber         : StringEscapeUtils.escapeCsv(row?.inventoryItem.lotNumber ?: ""),
+                            expirationDate    : row?.inventoryItem.expirationDate ? row?.inventoryItem.expirationDate.format(dateFormat) : "",
+                            abcClassification : StringEscapeUtils.escapeCsv(row?.product.getAbcClassification(location.id) ?: ""),
+                            binLocation       : StringEscapeUtils.escapeCsv(row?.binLocation?.name ?: ""),
+                            status            : g.message(code: "binLocationSummary.${row?.status}.label"),
+                            lastInventoryDate : latestInventoryDate ? latestInventoryDate.format(dateFormat) : "",
+                            quantityOnHand    : row?.quantity ?: 0,
+                    ]
+
+            return dataRow
+        }
+
+        if (params.print) {
+            def filename = "CycleCountReport-${location.name}-${new Date().format("dd MMM yyyy hhmmss")}"
+            response.contentType = "application/vnd.ms-excel"
+            response.setHeader("Content-disposition", "attachment; filename=\"${filename}.xls\"")
+            documentService.generateInventoryTemplate(response.outputStream, rows)
+            return
+        }
+
+        render(view: "showCycleCountReport", model: [rows: rows])
+    }
+
+    def showForecastReport = {
+        def origin = Location.get(session.warehouse.id)
+        params.origin = origin.name
+
+        // Export as XLS
+        if (params.format == "text/csv" && params.print) {
+            params.originId = session.warehouse.id
+            DateFormat dateFormat = new SimpleDateFormat("MM/dd/yyyy")
+            if (params.startDate && params.endDate) {
+                params.startDate = dateFormat.parse(params.startDate)
+                params.endDate = dateFormat.parse(params.endDate)
+            } else {
+                Integer demandPeriod = grailsApplication.config.openboxes.forecasting.demandPeriod ?: 365
+                Date today = new Date()
+                params.startDate = today - demandPeriod
+                params.endDate = today
+            }
+            def data = reportService.getForecastReport(params)
+
+            def rows = []
+            data.collect { item ->
+                def product = Product.get(item.productId)
+                def inventoryLevel
+                if (!params.replenishmentPeriodDays || !params.leadTimeDays) {
+                    inventoryLevel = InventoryLevel.findByProduct(product)
+                }
+                Integer replenishmentPeriodDays = params.replenishmentPeriodDays ? params.replenishmentPeriodDays.toInteger() : inventoryLevel && inventoryLevel.replenishmentPeriodDays ? inventoryLevel.replenishmentPeriodDays : 365
+                Integer leadTimeDays = params.leadTimeDays ? params.leadTimeDays.toInteger() : inventoryLevel && inventoryLevel.expectedLeadTimeDays ? inventoryLevel.expectedLeadTimeDays : 365
+                def productExpiry = forecastingService.getProductExpiry(origin, replenishmentPeriodDays + leadTimeDays, item.productId)
+                def quantityOnOrder = item?.totalOnOrder ?: 0
+                def quantityOnHand = item?.totalOnHand ?: productAvailabilityService.getQuantityOnHand(product, origin)
+                def quantityExpiring = productExpiry.collect {it.quantity_on_hand}.sum() ?: 0
+                def quantityAvailable = quantityOnOrder + quantityOnHand - quantityExpiring ?: 0
+                def averageDemand = item.averageMonthlyDemand ? item.averageMonthlyDemand?.setScale(1, RoundingMode.HALF_UP) : 0
+                def monthsOfStock = ((replenishmentPeriodDays + leadTimeDays) / 30).setScale(1, RoundingMode.HALF_UP) ?: 0
+                def quantityNeeded = averageDemand * monthsOfStock ?: 0
+                def quantityToOrder = BigDecimal.ZERO.max(quantityNeeded - quantityAvailable)
+                def unitPrice = product?.pricePerUnit ?: 0
+
+                def printRow = [
+                        'Product code'                    : product.productCode ?: '',
+                        'Name'                            : product.name,
+                        'Order Period (Days)'             : replenishmentPeriodDays,
+                        'Lead Time (Days)'                : leadTimeDays,
+                        'Qty On Order'                    : quantityOnOrder,
+                        'Qty On Hand'                     : quantityOnHand,
+                        'Qty Expiring within time period' : quantityExpiring,
+                        'Qty Available'                   : quantityAvailable,
+                        'Average Demand/Month'            : averageDemand,
+                        'Months of Stock Needed (order period + lead time in months)'  : monthsOfStock,
+                        'Qty Needed'                      : quantityNeeded,
+                        'Qty to Order'                    : quantityToOrder,
+                        'Estimated Cost'                  : unitPrice * quantityToOrder,
+                ]
+
+                rows << printRow
+            }
+
+            rows.sort { it["Product code"] }
+            if (rows.size() > 0) {
+                def filename = "ForecastReport-${new Date().format("dd MMM yyyy hhmmss")}"
+                response.contentType = "application/vnd.ms-excel"
+                response.setHeader("Content-disposition", "attachment; filename=\"${filename}.xls\"")
+                documentService.generateExcel(response.outputStream, rows)
+                response.outputStream.flush()
+            } else {
+                log.info("Unable to generate forecast report due to lack of data")
+                flash.message = "Unable to generate forecast report due to lack of data"
+            }
+        }
+
+        render(view: 'showForecastReport', params: params)
+    }
 }

@@ -23,66 +23,66 @@
             <div id="tabs-1">
                 <div class="box">
                     <h2><g:message code="default.email.label" default="Email"/></h2>
-                    <g:form controller="admin" action="sendMail" method="POST" enctype="multipart/form-data" useToken="true">
-                        <table class="table table-bordered">
-                            <tbody>
-                                <tr class="prop">
-                                    <td class="name">
-                                        <label><warehouse:message code="mail.to.label" default="To"/></label>
-                                    </td>
-                                    <td class="value">
-                                        <g:textField name="to" value="${session?.user?.email}" class="text" size="60"/>
-                                    </td>
-                                </tr>
-                                <tr class="prop">
-                                    <td class="name">
-                                        <label><warehouse:message code="mail.from.label" default="From"/></label>
-                                    </td>
-                                    <td class="value">
-                                        <g:textField name="from" value="info@openboxes.com" class="text" size="60"/>
-                                    </td>
-                                </tr>
-                                <tr class="prop">
-                                    <td class="name">
-                                        <label><warehouse:message code="mail.subject.label" default="Subject"/></label>
-                                    </td>
-                                    <td class="value">
-                                        <g:textField name="subject" value="${params.subject?:'Test email'}" class="text" size="60"/>
-                                    </td>
-                                </tr>
-                                <tr class="prop">
-                                    <td class="name">
-                                        <label><warehouse:message code="mail.includesHtml.label" default="Includes HTML?"/></label>
-                                    </td>
-                                    <td class="value">
-                                        <g:checkBox name="includesHtml" value="${params?.includesHtml}"/>
-                                    </td>
-                                </tr>
-                                <tr class="prop">
-                                    <td class="name">
-                                        <label><warehouse:message code="mail.message.label" default="Message"/></label>
-                                    </td>
-                                    <td class="value">
-                                        <g:textArea name="message" value="${params?.message}" class="text" cols="60" rows="10"/>
-                                    </td>
-                                </tr>
-                                <tr class="prop">
-                                    <td class="name">
-                                        <label><warehouse:message code="mail.file.label" default="File"/></label>
-                                    </td>
-                                    <td class="value">
-                                        <input type="file" name="file" value="${params.file}"/>
-                                    </td>
-                                </tr>
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td colspan="2" class="center">
-                                        <g:submitButton name="Send Mail" class="button"></g:submitButton>
-                                        <g:link controller="admin" action="sendMail" class="button"><warehouse:message code="default.button.cancel.label"/></g:link>
-                                    </td>
-                                </tr>
-                            </tfoot>
+                <g:form controller="admin" action="sendMail" method="POST" enctype="multipart/form-data" useToken="true">
+                    <table class="table table-bordered">
+                        <tbody>
+                            <tr class="prop">
+                                <td class="name">
+                                    <label><warehouse:message code="mail.to.label" default="To"/></label>
+                                </td>
+                                <td class="value">
+                                    <g:textField name="to" value="${session?.user?.email}" class="text" size="60"/>
+                                </td>
+                            </tr>
+                            <tr class="prop">
+                                <td class="name">
+                                    <label><warehouse:message code="mail.from.label" default="From"/></label>
+                                </td>
+                                <td class="value">
+                                    <g:textField name="from" value="${grailsApplication.config.grails.mail.from}" class="text" size="60"/>
+                                </td>
+                            </tr>
+                            <tr class="prop">
+                                <td class="name">
+                                    <label><warehouse:message code="mail.subject.label" default="Subject"/></label>
+                                </td>
+                                <td class="value">
+                                    <g:textField name="subject" value="${params.subject?:'Test email'}" class="text" size="60"/>
+                                </td>
+                            </tr>
+                            <tr class="prop">
+                                <td class="name">
+                                    <label><warehouse:message code="mail.includesHtml.label" default="Includes HTML?"/></label>
+                                </td>
+                                <td class="value">
+                                    <g:checkBox name="includesHtml" value="${params?.includesHtml}"/>
+                                </td>
+                            </tr>
+                            <tr class="prop">
+                                <td class="name">
+                                    <label><warehouse:message code="mail.message.label" default="Message"/></label>
+                                </td>
+                                <td class="value">
+                                    <g:textArea name="message" value="${params?.message}" class="text" cols="60" rows="10"/>
+                                </td>
+                            </tr>
+                            <tr class="prop">
+                                <td class="name">
+                                    <label><warehouse:message code="mail.file.label" default="File"/></label>
+                                </td>
+                                <td class="value">
+                                    <input type="file" name="file" value="${params.file}"/>
+                                </td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2" class="center">
+                                    <g:submitButton name="Send Mail" class="button icon email"></g:submitButton>
+                                    <g:link controller="admin" action="sendMail" class="button icon reload"><warehouse:message code="default.button.cancel.label"/></g:link>
+                                </td>
+                            </tr>
+                        </tfoot>
 
                         </table>
                     </g:form>

@@ -1,11 +1,20 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
+
+import _ from 'lodash';
 import PropTypes from 'prop-types';
-import { Form } from 'react-final-form';
-import { withRouter } from 'react-router-dom';
-import { getTranslate } from 'react-localize-redux';
 import queryString from 'query-string';
+import { Form } from 'react-final-form';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import { withRouter } from 'react-router-dom';
+
+import { hideSpinner, showSpinner } from 'actions';
+import SelectField from 'components/form-elements/SelectField';
+import TextField from 'components/form-elements/TextField';
+import apiClient from 'utils/apiClient';
+import { renderFormField } from 'utils/form-utils';
+import { debounceLocationsFetch } from 'utils/option-utils';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-confirm-alert/src/react-confirm-alert.css';
 
@@ -58,7 +67,7 @@ const FIELDS = {
       filterOptions: options => options,
     },
     getDynamicAttr: props => ({
-      loadOptions: props.debouncedLocationsFetch,
+      loadOptions: props.debouncedOriginLocationsFetch,
       disabled: !_.isNil(props.stockMovementId),
     }),
   },
@@ -77,8 +86,9 @@ const FIELDS = {
       filterOptions: options => options,
     },
     getDynamicAttr: props => ({
-      loadOptions: props.debouncedLocationsFetch,
-      disabled: !props.isSuperuser || !_.isNil(props.stockMovementId),
+      loadOptions: props.debouncedDestinationLocationsFetch,
+      disabled: (!props.isSuperuser || !_.isNil(props.stockMovementId)) &&
+        !props.hasCentralPurchasingEnabled,
     }),
   },
 };
@@ -92,8 +102,23 @@ class CreateStockMovement extends Component {
       values: this.props.initialValues,
     };
 
-    this.debouncedLocationsFetch =
-      debounceLocationsFetch(this.props.debounceTime, this.props.minSearchLength);
+    this.debouncedOriginLocationsFetch =
+      debounceLocationsFetch(
+        this.props.debounceTime,
+        this.props.minSearchLength,
+        null, // activityCodes
+        false, // fetchAll
+        true, // withOrgCode
+        false, // withTypeDescription
+      );
+
+    this.debouncedDestinationLocationsFetch =
+      debounceLocationsFetch(
+        this.props.debounceTime,
+        this.props.minSearchLength,
+        null,
+        true,
+      );
   }
 
   componentDidMount() {
@@ -110,7 +135,7 @@ class CreateStockMovement extends Component {
 
   componentWillReceiveProps(nextProps) {
     if (!this.props.match.params.stockMovementId && this.state.setInitialValues
-      && nextProps.location.id && !orderId) {
+      && nextProps.location.id && !orderId && !this.props.hasCentralPurchasingEnabled) {
       this.setInitialValues(null, nextProps.location);
     }
   }
@@ -123,7 +148,7 @@ class CreateStockMovement extends Component {
         id: origin.id,
         type: origin.locationType ? origin.locationType.locationTypeCode : null,
         name: origin.name,
-        label: `${origin.name} [${origin.locationType ? origin.locationType.description : null}]`,
+        label: `${origin.organizationCode ? `${origin.organizationCode} - ` : ''}${origin.name}`,
       };
     }
     if (destination) {
@@ -163,6 +188,7 @@ class CreateStockMovement extends Component {
         stockMovementUrl = `/api/stockMovements/${values.stockMovementId}/updateRequisition`;
         payload = {
           description: values.description,
+          'destination.id': values.destination.id,
         };
       } else {
         stockMovementUrl = '/api/stockMovements/createCombinedShipments';
@@ -202,8 +228,10 @@ class CreateStockMovement extends Component {
                 FIELDS,
                 (fieldConfig, fieldName) => renderFormField(fieldConfig, fieldName, {
                   isSuperuser: this.props.isSuperuser,
-                  debouncedLocationsFetch: this.debouncedLocationsFetch,
-                  stockMovementId: values.id,
+                  debouncedDestinationLocationsFetch: this.debouncedDestinationLocationsFetch,
+                  debouncedOriginLocationsFetch: this.debouncedOriginLocationsFetch,
+                  stockMovementId: values.stockMovementId,
+                  hasCentralPurchasingEnabled: this.props.hasCentralPurchasingEnabled,
                 }),
               )}
             </div>
@@ -225,6 +253,7 @@ const mapStateToProps = state => ({
   translate: translateWithDefaultMessage(getTranslate(state.localize)),
   debounceTime: state.session.searchConfig.debounceTime,
   minSearchLength: state.session.searchConfig.minSearchLength,
+  hasCentralPurchasingEnabled: state.session.currentLocation.hasCentralPurchasingEnabled,
 });
 
 export default withRouter(connect(mapStateToProps, {
@@ -273,4 +302,6 @@ CreateStockMovement.propTypes = {
   translate: PropTypes.func.isRequired,
   debounceTime: PropTypes.number.isRequired,
   minSearchLength: PropTypes.number.isRequired,
+  /** Is true when currently selected location has central purchasing enabled */
+  hasCentralPurchasingEnabled: PropTypes.bool.isRequired,
 };

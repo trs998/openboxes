@@ -35,11 +35,17 @@
             <div id="location-tabs" class="tabs">
                 <ul>
                     <li><a href="#location-details-tab"><g:message code="location.label"/></a></li>
-                    <li><a href="#location-status-tab"><g:message code="location.status.label"
-                                                                  default="Status"/></a></li>
-                    <g:if test="${locationInstance?.locationType?.locationTypeCode != LocationTypeCode.BIN_LOCATION}">
-                        <li><a href="#location-address-tab"><g:message code="location.address.label"
+                    <li><a href="#location-configuration-tab"><g:message code="location.configuration.label"
+                                                                  default="Configuration"/></a></li>
+                    <g:if test="${!locationInstance?.isInternalLocation()}">
+                        <g:if test="${!locationInstance?.isZoneLocation()}">
+                            <li><a href="#location-address-tab"><g:message code="location.address.label"
                                                                        default="Address"/></a></li>
+                            <li><a href="${request.contextPath}/location/showZoneLocations/${locationInstance?.id}"
+                                   id="location-zoneLocations-tab">
+                                <g:message code="location.zoneLocations.label" default="Zone Locations"/></a>
+                            </li>
+                        </g:if>
                     <%--<li><a href="#location-binLocations-tab"><g:message code="location.binLocations.label" default="Bin Locations"/></a></li>--%>
                         <li><a href="${request.contextPath}/location/showBinLocations/${locationInstance?.id}"
                                id="location-binLocations-tab">
@@ -52,14 +58,17 @@
                         <li><a href="${request.contextPath}/location/showContents/${locationInstance?.id}"><warehouse:message
                                 code="binLocation.contents.label" default="Contents"/></a></li>
                     </g:else>
-
+                    <li><a href="${request.contextPath}/location/showForecastingConfiguration/${locationInstance?.id}"
+                           id="location-forecastingConfiguration-tab">
+                        <g:message code="forecasting.label"
+                                   default="Forecasting"/></a>
+                    </li>
                 </ul>
 
                 <div id="location-details-tab">
                     <div class="box">
                         <h2>
                             <img src="${resource(dir: 'images/icons/silk', file: 'application_view_detail.png')}"
-                                 class="middle"/>
                             <warehouse:message code="location.details.label" default="Details"/>
                         </h2>
                         <table>
@@ -99,7 +108,7 @@
                                                  class="text" size="80"/>
                                 </td>
                             </tr>
-                            <g:if test="${locationInstance?.locationType?.locationTypeCode == LocationTypeCode.BIN_LOCATION}">
+                            <g:if test="${locationInstance?.isInternalLocation() || locationInstance.isZoneLocation()}">
                                 <tr class="prop">
                                     <td valign="top" class="name">
                                         <label for="name"><warehouse:message
@@ -113,6 +122,24 @@
                                                           noSelection="['null': '']"
                                                           class="chzn-select-deselect"/>
                                     </td>
+                            <g:if test="${locationInstance?.isInternalLocation()}">
+                                </tr>
+                            </g:if>
+                                <tr class="prop">
+                                    <td valign="top" class="name">
+                                        <label for="name"><warehouse:message
+                                                code="location.zoneLocation.label"/></label>
+                                    </td>
+                                    <td valign="top"
+                                        class="value ${hasErrors(bean: locationInstance, field: 'zone', 'errors')}">
+
+                                        <g:selectZoneLocationByLocation
+                                                name="zone.id"
+                                                id="${locationInstance?.parentLocation?.id}"
+                                                value="${locationInstance?.zone?.id}"
+                                                noSelection="['null': '']"
+                                                class="chzn-select-deselect"/>
+                                    </td>
                                 </tr>
                             </g:if>
                             <tr class="prop">
@@ -121,12 +148,12 @@
                                             code="organization.label"/></label>
                                 </td>
                                 <td valign="top" class="value">
-                                    <g:select name="organization.id"
-                                              from="${org.pih.warehouse.core.Organization.list()}"
+
+                                    <g:selectOrganization name="organization.id"
                                               class="chzn-select-deselect"
                                               optionKey="id"
-                                              optionValue="${{ format.metadata(obj: it) }}"
                                               value="${locationInstance?.organization?.id}"
+                                              optionValue="${{ format.metadata(obj: it) }}"
                                               noSelection="['null': '']"/>
                                 </td>
                             </tr>
@@ -146,7 +173,7 @@
                                               noSelection="['null': '']"/>
                                 </td>
                             </tr>
-                            <g:if test="${locationInstance?.locationType?.locationTypeCode != LocationTypeCode.BIN_LOCATION}">
+                            <g:if test="${!locationInstance?.isInternalLocation() && !locationInstance.isZoneLocation()}">
                                 <tr class="prop">
                                     <td valign="top" class="name">
                                         <label for="name"><warehouse:message
@@ -177,46 +204,6 @@
                                                   noSelection="['null': '']"/>
                                     </td>
                                 </tr>
-
-
-                                <tr class="prop">
-                                    <td valign="top" class="name">
-                                        <label for="bgColor"><warehouse:message
-                                                code="location.bgColor.label"/></label>
-                                    </td>
-                                    <td valign="top"
-                                        class="value ${hasErrors(bean: locationInstance, field: 'bgColor', 'errors')}">
-                                        <g:textField name="bgColor"
-                                                     value="${locationInstance?.bgColor}"
-                                                     class="text" size="10"/>
-                                    </td>
-                                </tr>
-                                <tr class="prop">
-                                    <td valign="top" class="name">
-                                        <label for="fgColor"><warehouse:message
-                                                code="location.fgColor.label"/></label>
-                                    </td>
-                                    <td valign="top"
-                                        class="value ${hasErrors(bean: locationInstance, field: 'fgColor', 'errors')}">
-                                        <g:textField name="fgColor"
-                                                     value="${locationInstance?.fgColor}"
-                                                     class="text" size="10"/>
-                                    </td>
-                                </tr>
-
-                                <tr class="prop">
-                                    <td valign="top" class="name">
-                                        <label for="bgColor"><warehouse:message
-                                                code="location.sortOrder.label"
-                                                default="Sort order"/></label>
-                                    </td>
-                                    <td valign="top"
-                                        class="value ${hasErrors(bean: locationInstance, field: 'sortOrder', 'errors')}">
-                                        <g:textField name="sortOrder"
-                                                     value="${locationInstance?.sortOrder}"
-                                                     class="text" size="10"/>
-                                    </td>
-                                </tr>
                             </g:if>
 
                             </tbody>
@@ -244,12 +231,11 @@
                     </div>
                 </div>
 
-                <div id="location-status-tab">
+                <div id="location-configuration-tab">
                     <div class="box">
                         <h2>
                             <img src="${resource(dir: 'images/icons/silk', file: 'flag_red.png')}"
-                                 class="middle"/>
-                            <warehouse:message code="default.status.label" default="Status"/>
+                            <warehouse:message code="default.configuration.label" default="Configuration"/>
                         </h2>
                         <table>
                             <tbody>
@@ -264,6 +250,33 @@
 
                                 </td>
                             </tr>
+
+                            <g:if test="${!locationInstance?.isInternalLocation() && !locationInstance?.isZoneLocation()}">
+                                <tr class="prop">
+                                    <td valign="top" class="name">
+                                        <label for="bgColor"><warehouse:message
+                                                code="location.bgColor.label"/></label>
+                                    </td>
+                                    <td valign="top"
+                                        class="value ${hasErrors(bean: locationInstance, field: 'bgColor', 'errors')}">
+                                        <g:textField name="bgColor"
+                                                     value="${locationInstance?.bgColor}"
+                                                     class="text" size="10"/>
+                                    </td>
+                                </tr>
+                                <tr class="prop">
+                                    <td valign="top" class="name">
+                                        <label for="fgColor"><warehouse:message
+                                                code="location.fgColor.label"/></label>
+                                    </td>
+                                    <td valign="top"
+                                        class="value ${hasErrors(bean: locationInstance, field: 'fgColor', 'errors')}">
+                                        <g:textField name="fgColor"
+                                                     value="${locationInstance?.fgColor}"
+                                                     class="text" size="10"/>
+                                    </td>
+                                </tr>
+                            </g:if>
                             <tr class="prop">
                                 <td valign="top" class="name">
                                     <label for="local"><warehouse:message
@@ -367,7 +380,7 @@
                     </div>
                 </div>
 
-                <g:if test="${locationInstance?.locationType?.locationTypeCode != LocationTypeCode.BIN_LOCATION}">
+                <g:if test="${!locationInstance?.isInternalLocation() && !locationInstance?.isZoneLocation()}">
 
                     <div id="location-address-tab">
                         <g:hiddenField name="address.id" value="${locationInstance?.address?.id}"/>
@@ -500,7 +513,13 @@
      title="${g.message(code: 'default.add.label', args: [g.message(code: 'location.internal.label')])}">
     <div class="dialog">
         <g:form controller="location" action="update">
-            <g:hiddenField name="parentLocation.id" value="${locationInstance?.id}"/>
+            <g:if test="${locationInstance?.isZoneLocation()}">
+                <g:hiddenField name="zone.id" value="${locationInstance?.id}"/>
+                <g:hiddenField name="parentLocation.id" value="${locationInstance?.parentLocation?.id}"/>
+            </g:if>
+            <g:else>
+                <g:hiddenField name="parentLocation.id" value="${locationInstance?.id}"/>
+            </g:else>
             <g:hiddenField name="version" value="${locationInstance?.version}"/>
             <table>
                 <tbody>
@@ -536,7 +555,7 @@
 
                     </td>
                     <td valign="top" class="value">
-                        <button type="submit" class="button icon approve">
+                        <button type="submit" class="button">
                             <warehouse:message code="default.button.save.label"/>
                         </button>
 
@@ -552,6 +571,65 @@
 
 <div id="dlgShowContents"
      title="${g.message(code: 'default.show.label', args: [g.message(code: 'location.binLocation.label')])}">
+    <!-- Contents loaded dynamically -->
+</div>
+
+<div id="dlgAddZoneLocation"
+     title="${g.message(code: 'default.add.label', args: [g.message(code: 'location.zoneLocation.label')])}">
+    <div class="dialog">
+        <g:form controller="location" action="update">
+            <g:hiddenField name="parentLocation.id" value="${locationInstance?.id}"/>
+            <g:hiddenField name="version" value="${locationInstance?.version}"/>
+            <table>
+                <tbody>
+                <tr class="prop">
+                    <td valign="top" class="name">
+                        <label for="name"><warehouse:message
+                                code="location.locationType.label"/></label>
+                    </td>
+                    <td valign="top" class="value">
+                        <g:set var="zoneLocationTypes"
+                               value="${org.pih.warehouse.core.LocationType.zoneLocationTypes.sort()}"/>
+                        <g:set var="defaultZoneLocationType"
+                               value="${org.pih.warehouse.core.LocationType.defaultZoneLocationType}"/>
+                        <g:select name="locationType.id" from="${zoneLocationTypes}"
+                                  class="chzn-select-deselect"
+                                  value="${zoneLocation?.locationType?.id ?: defaultZoneLocationType?.id}"
+                                  optionKey="id" optionValue="${{ format.metadata(obj: it) }}"
+                                  noSelection="['null': '']"/>
+                    </td>
+                </tr>
+                <tr class="prop">
+                    <td valign="top" class="name">
+                        <label for="name"><warehouse:message code="location.name.label"/></label>
+                    </td>
+                    <td valign="top"
+                        class="value ${hasErrors(bean: locationInstance, field: 'name', 'errors')}">
+                        <g:textField name="name" value="${zoneLocation?.name}" class="text"
+                                     size="80"/>
+                    </td>
+                </tr>
+                <tr class="prop">
+                    <td valign="top" class="name">
+
+                    </td>
+                    <td valign="top" class="value">
+                        <button type="submit" class="button">
+                            <warehouse:message code="default.button.save.label"/>
+                        </button>
+
+                    </td>
+                </tr>
+
+                </tbody>
+            </table>
+
+        </g:form>
+    </div>
+</div>
+
+<div id="dlgShowZoneContents"
+     title="${g.message(code: 'default.show.label', args: [g.message(code: 'location.zoneLocation.label')])}">
     <!-- Contents loaded dynamically -->
 </div>
 
@@ -626,6 +704,8 @@
     // Define all dialog windows
     $("#dlgShowContents").dialog({autoOpen: false, modal: true, width: 800});
     $("#dlgAddBinLocation").dialog({autoOpen: false, modal: true, width: 800});
+    $("#dlgShowZoneContents").dialog({autoOpen: false, modal: true, width: 800});
+    $("#dlgAddZoneLocation").dialog({autoOpen: false, modal: true, width: 800});
     $("#dlgImportBinLocations").dialog({autoOpen: false, modal: true, width: 800});
 
     $(".btnShowContents").livequery("click", function (event) {
@@ -646,6 +726,19 @@
     $(".btnCloseDialog").livequery("click", function () {
       event.preventDefault();
       $("#dlgAddBinLocation").dialog('close');
+    });
+
+    $(".btnShowZoneLocationContents").livequery("click", function (event) {
+      var id = $(this).data("id");
+      var url = "${request.contextPath}/location/showContents/" + id;
+      console.log(url);
+      $("#dlgShowZoneContents").load(url).dialog('open');
+      event.preventDefault();
+    });
+    $("#btnAddZoneLocation").livequery("click", function (event) {
+
+      event.preventDefault();
+      $("#dlgAddZoneLocation").dialog('open');
     });
 
     // Import Bin Locations

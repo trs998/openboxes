@@ -1,11 +1,14 @@
+import React, { Component } from 'react';
+
 import arrayMutators from 'final-form-arrays';
 import update from 'immutability-helper';
 import _ from 'lodash';
+import moment from 'moment';
 import PropTypes from 'prop-types';
-import React, { Component } from 'react';
 import { confirmAlert } from 'react-confirm-alert';
 import { Form } from 'react-final-form';
 import { connect } from 'react-redux';
+
 import { hideSpinner, showSpinner } from '../../actions';
 import apiClient, { flattenRequest, parseResponse, stringUrlInterceptor } from '../../utils/apiClient';
 import { renderFormField } from '../../utils/form-utils';
@@ -16,6 +19,7 @@ import DateField from '../form-elements/DateField';
 import LabelField from '../form-elements/LabelField';
 import TableRowWithSubfields from '../form-elements/TableRowWithSubfields';
 import TextField from '../form-elements/TextField';
+
 
 const SHIPMENT_FIELDS = {
   'origin.name': {
@@ -47,7 +51,10 @@ const SHIPMENT_FIELDS = {
     defaultMessage: 'Delivered on',
     type: params => <DateField {...params} />,
     attributes: {
-      disabled: true,
+      dateFormat: 'MM/DD/YYYY HH:mm Z',
+      required: true,
+      showTimeSelect: true,
+      autoComplete: 'off',
     },
   },
 };
@@ -57,6 +64,7 @@ const TABLE_FIELDS = {
     type: ArrayField,
     rowComponent: TableRowWithSubfields,
     subfieldKey: 'shipmentItems',
+    headerFontSize: '0.775rem',
     fields: {
       'parentContainer.name': {
         fieldKey: '',
@@ -111,7 +119,7 @@ const TABLE_FIELDS = {
         defaultMessage: 'Expiration date',
         flexWidth: '1',
       },
-      'binLocation.name': {
+      binLocation: {
         type: params => (params.subfield ? <LabelField {...params} /> : null),
         label: 'react.partialReceiving.binLocation.label',
         defaultMessage: 'Bin Location',
@@ -119,6 +127,14 @@ const TABLE_FIELDS = {
         getDynamicAttr: ({ hasBinLocationSupport }) => ({
           hide: !hasBinLocationSupport,
         }),
+        attributes: {
+          showValueTooltip: true,
+          formatValue: fieldValue => (
+            <div className="d-flex">
+              {fieldValue.zoneName ? <div className="text-truncate" style={{ minWidth: 30, flexShrink: 20 }}>{fieldValue.zoneName}</div> : ''}
+              <div className="text-truncate">{fieldValue.zoneName ? `: ${fieldValue.name}` : fieldValue.name}</div>
+            </div>),
+        },
       },
       'recipient.name': {
         type: params => (params.subfield ? <LabelField {...params} /> : null),
@@ -156,6 +172,7 @@ const TABLE_FIELDS = {
         flexWidth: '1',
         getDynamicAttr: ({ saveDisabled, fieldValue, hasPartialReceivingSupport }) => ({
           disabled: saveDisabled || _.toInteger(fieldValue) <= 0 || !hasPartialReceivingSupport,
+          hide: !hasPartialReceivingSupport,
         }),
       },
       comment: {
@@ -171,9 +188,13 @@ const TABLE_FIELDS = {
 function validate(values) {
   const errors = {};
   errors.containers = [];
+  const dateDelivered = moment(values.dateDelivered, 'MM/DD/YYYY');
 
   if (!values.dateDelivered) {
     errors.dateDelivered = 'react.default.error.requiredField.label';
+  }
+  if (moment().diff(dateDelivered) < 0) {
+    errors.dateDelivered = 'react.partialReceiving.error.futureDate.label';
   }
   _.forEach(values.containers, (container, key) => {
     errors.containers[key] = { shipmentItems: [] };
@@ -418,7 +439,12 @@ class ReceivingCheckScreen extends Component {
                     </button>
               : null}
                 </span>
-                <div className="form-title">Shipment Informations</div>
+                <div className="form-title">
+                  <Translate
+                    id="react.partialReceiving.shipmentInformation.label"
+                    defaultMessage="Shipment information"
+                  />
+                </div>
                 {_.map(SHIPMENT_FIELDS, (fieldConfig, fieldName) =>
                 renderFormField(fieldConfig, fieldName, {
                   saveDisabled: this.state.completed ||

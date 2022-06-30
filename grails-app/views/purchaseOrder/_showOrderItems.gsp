@@ -21,6 +21,14 @@
     .import-template + label {
         display: inline-block;
     }
+    .filters-container {
+        justify-self: flex-end;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        align-items: center;
+        margin: 10px 5px;
+    }
 </style>
 
 </head>
@@ -59,22 +67,30 @@
                 <div id="edit-items" class="box">
                     <h2 style="display: flex; align-items: center; justify-content: space-between;">
                         <warehouse:message code="order.wizard.addItems.label"/>
-                        <div class="button-group" style="margin-right: 5px;">
-                            <g:if test="${order?.status < OrderStatus.PLACED}">
+                        <div style="display: flex; align-items: center;">
+                            <div class="filters-container">
+                                <label class="name"><warehouse:message code="inventory.filterByProduct.label"/></label>
+                                <div>
+                                    <input type="text" id="orderItemsFilter" class="text large" placeholder="Filter by name or code"/>
+                                </div>
+                            </div>
+                            <div class="button-group" style="margin-right: 5px;">
                                 <input type="file" name="importTemplate" id="importTemplate" class="import-template" />
                                 <label for="importTemplate" class="button">
                                     <img src="${resource(dir: 'images/icons/silk', file: 'disk_upload.png')}" />&nbsp;
                                     <warehouse:message code="default.importTemplate.label" default="Import template"/>
                                 </label>
-                            </g:if>
+                            </div>
                         </div>
                     </h2>
+
                     <g:form name="orderItemForm" action="create" method="post">
                         <g:hiddenField id="orderId" name="order.id" value="${order?.id }"></g:hiddenField>
                         <g:hiddenField id="orderItemId" name="orderItem.id" value="${orderItem?.id }"></g:hiddenField>
                         <g:hiddenField id="supplierId" name="supplier.id" value="${order?.originParty?.id }"></g:hiddenField>
-                        <g:hiddenField id="isAccountingRequired" name="isAccountingRequired"
-                                       value="${order?.destination?.isAccountingRequired()}">
+                        <g:hiddenField id="destinationPartyId" name="destinationPartyId.id" value="${order?.destinationParty?.id }"></g:hiddenField>
+                        <g:hiddenField id="validationCode" name="validationCode" value=""></g:hiddenField>
+                        <g:hiddenField id="isAccountingRequired" name="isAccountingRequired" value="${isAccountingRequired}">
                         </g:hiddenField>
                         <table id="orderItemsTable" class="items-table">
                             <thead>
@@ -243,22 +259,24 @@
         // When chosen product has changed, trigger function that updates source code column
         $("#product-id").change(function() {
           var supplierId = $("#supplierId").val();
+          var destinationPartyId = $("#destinationPartyId").val();
           if (!this.value) {
             $("#productSupplier").html("").attr("disabled", true);
           } else {
             clearSource();
             $('#productSupplier').html("");
-            productChanged(this.value, supplierId);
+            productChanged(this.value, supplierId, destinationPartyId);
           }
         });
 
         // When chosen source code has changed, trigger function that updates supplier code, manufacturer and manufacturer code columns
         $("#productSupplier").live('change', function(event) {
           var selectedSourceCode = $("#productSupplier option:selected").val();
+          var destinationPartyId = $("#destinationPartyId").val();
           if (selectedSourceCode === CREATE_NEW) {
             createProductSource();
           } else if (selectedSourceCode) {
-            sourceCodeChanged(selectedSourceCode);
+            sourceCodeChanged(selectedSourceCode, destinationPartyId);
           }
         });
 
@@ -344,7 +362,6 @@
               clearOrderItems();
               loadOrderItems();
               $('#orderItems').html('<option></option>').trigger('change');
-              getTotalPrice();
             },
             error: function (jqXHR, textStatus, errorThrown) {
               if (jqXHR.responseText) {
@@ -366,7 +383,6 @@
             success: function () {
               clearOrderAdjustments();
               loadOrderAdjustments();
-              getTotalAdjustments();
             },
             error: function (jqXHR, textStatus, errorThrown) {
               if (jqXHR.responseText) {
@@ -436,18 +452,20 @@
           var percentage = $("#percentage").val();
           var canManageAdjustments = ($("#canManageAdjustments").val() === "true");
           var budgetCode = $("#adjustmentBudgetCode").val();
+          var description = $("#description").val();
           var isAccountingRequired = ($("#isAccountingRequired").val() === "true");
 
           if (!orderAdjustmentType) $("#orderAdjustmentType").notify("Required")
           if (!(percentage || amount)) $("#amount").notify("Amount or percentage required")
           if (!(percentage || amount)) $("#percentage").notify("Amount or percentage required")
+          if (!description) $("#description").notify("Description required")
           if (!canManageAdjustments) $.notify("You do not have permissions to perform this action")
           if (!budgetCode && isAccountingRequired) {
             $("#adjustmentBudgetCode").notify("Required")
             return false
           }
 
-          if (orderAdjustmentType && canManageAdjustments && (amount || percentage)) {
+          if (orderAdjustmentType && canManageAdjustments && (amount || percentage) && description) {
             return true
           } else {
             return false
@@ -467,26 +485,30 @@
             var data = $("#orderItemForm").serialize();
             data += '&orderIndex=' + $("#orderItemsTable tbody tr").length;
             if (validateItemsForm()) {
+              if ($("#validationCode").val() == 'WARN' && !confirm('${warehouse.message(code: 'orderItem.warningSupplier.label').replaceAll( /(')/, '\\\\$1' )}')) {
+                return false
+              } else {
                 $.ajax({
-                    url:'${g.createLink(controller:'order', action:'saveOrderItem')}',
-                    data: data,
-                    success: function() {
-                        clearOrderItemForm();
-                        loadOrderItems();
-                        applyFocus("#product-suggest");
-                        $('#supplierCode').text('');
-                        $('#manufacturerCode').text('');
-                        $('#manufacturer').text('');
-                        $.notify("Successfully saved new item", "success")
-                    },
-                    error: function(jqXHR, textStatus, errorThrown) {
-                      if (jqXHR.responseText) {
-                        $.notify(jqXHR.responseText, "error");
-                      } else {
-                        $.notify("Error saving your item");
-                      }
+                  url:'${g.createLink(controller:'order', action:'saveOrderItem')}',
+                  data: data,
+                  success: function() {
+                    clearOrderItemForm();
+                    loadOrderItems();
+                    applyFocus("#product-suggest");
+                    $('#supplierCode').text('');
+                    $('#manufacturerCode').text('');
+                    $('#manufacturer').text('');
+                    $.notify("Successfully saved new item", "success")
+                  },
+                  error: function(jqXHR, textStatus, errorThrown) {
+                    if (jqXHR.responseText) {
+                      $.notify(jqXHR.responseText, "error");
+                    } else {
+                      $.notify("Error saving your item");
                     }
+                  }
                 });
+              }
             }
             else {
               $.notify("Please enter a value for all required fields")
@@ -553,8 +575,8 @@
             $("#orderAdjustmentType").val(null).trigger('change');
             $("#orderItems").val(null).trigger('change');
             $("#description").val("");
-            $("#percentage").val("");
-            $("#amount").val("");
+            $("#percentage").removeAttr("disabled").val("");
+            $("#amount").removeAttr("disabled").val("");
             $("#comments").val("");
             $("#adjustmentBudgetCode").val(null).trigger('change');
         }
@@ -596,6 +618,8 @@
                         allowClear: true,
                         tokenSeparators: [","],
                     });
+
+                    getTotalPrice();
                 }
             });
         }
@@ -618,6 +642,9 @@
 
               // Style table rows
               $("#orderAdjustmentsTable > tbody tr").removeClass("odd").filter(":odd").addClass("odd");
+
+              getTotalPrice();
+              getTotalAdjustments();
             }
           });
         }
@@ -631,12 +658,13 @@
         }
 
         // Update source code column with product supplier source codes based on product chosen by user
-        function productChanged(productId, supplierId, sourceId = null) {
+        function productChanged(productId, supplierId, destinationPartyId, sourceId = null) {
           $.ajax({
             type: 'POST',
             data: {
               productId: productId,
               supplierId: supplierId,
+              destinationPartyId: destinationPartyId,
             },
             url: '${request.contextPath}/json/productChanged',
             success: function (data, textStatus) {
@@ -658,9 +686,11 @@
                   return null;
                 }
               })
-              .append(new Option(CREATE_NEW, CREATE_NEW, false, false))
               .trigger('change')
               .removeAttr("disabled");
+              if (!$('#productSupplier').find("option[value='" + CREATE_NEW + "']").length) {
+                  $('#productSupplier').append(new Option(CREATE_NEW, CREATE_NEW, false, false)).trigger('change');
+              }
               if (sourceId) {
                 $('#productSupplier').val(sourceId).trigger('change');
               }
@@ -670,15 +700,19 @@
         }
 
         // Update supplier code, manufacturer and manufacturer code columns based on source code chosen by user
-        function sourceCodeChanged(productSupplierId) {
+        function sourceCodeChanged(productSupplierId, destinationPartyId) {
           $.ajax({
             type: 'POST',
-            data: 'productSupplierId=' + productSupplierId,
+            data: {
+              productSupplierId: productSupplierId,
+              destinationPartyId: destinationPartyId,
+            },
             url: '${request.contextPath}/json/productSupplierChanged',
             success: function (data, textStatus) {
               $('#supplierCode').text(data.supplierCode);
               $('#manufacturerCode').text(data.manufacturerCode);
-              if (data.manufacturer.id) {
+              $("#validationCode").val(data.validationCode ? data.validationCode.name : '');
+              if (data.manufacturer) {
                 $('#manufacturer').text(data.manufacturer.name);
               }
               $("#unitPrice").val(data.unitPrice);
@@ -925,8 +959,38 @@
 
     </script>
 
+
+<script>
+  $(document).ready(function() {
+    $("#orderItemsFilter").keyup(function(event){
+      const filterCell = 1; // product name
+      const filterValue = $("#orderItemsFilter")
+        .val()
+        .toUpperCase();
+      filterTable(filterCell, filterValue)
+    });
+  });
+  function filterTable(cellIndex, filterValue) {
+    const tableRows = $("#orderItemsTable tr.dataRow");
+    // Loop through all table rows, and hide those who don't match the search query
+    $.each(tableRows, function(index, currentRow) {
+      // If filter matches text value then we display, otherwise hide
+      const txtValue = $(currentRow)
+        .find("td")
+        .eq(cellIndex)
+        .text();
+      if (txtValue.toUpperCase().indexOf(filterValue) > -1) {
+        $(currentRow).show();
+      } else {
+        $(currentRow).hide();
+      }
+    });
+  }
+</script>
+
+
 <script id="itemsRowTemplate" type="x-jquery-tmpl">
-<tr id="{{= id}}" tabindex="{{= index}}" class="{{if orderItemStatusCode == "CANCELED" }} canceled-item {{else !canEdit }} non-editable {{/if}}">
+<tr id="{{= id}}" tabindex="{{= index}}" class="{{if orderItemStatusCode == "CANCELED" }} canceled-item {{else !canEdit }} non-editable {{/if}} dataRow">
 	<td class="center middle">
     	{{= index }}
 	</td>

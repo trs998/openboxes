@@ -17,10 +17,16 @@ class InventoryLevel {
 
     String id
 
+    // Product assigned to inventory level rule
     Product product
 
+    // Internal location assigned to inventory level rule (optional)
+    Location internalLocation
+
+    // Inventory status of rule (whether it's enabled / disabled)
     InventoryStatus status = InventoryStatus.SUPPORTED
 
+    // Preferred for reorder (@deprecated)
     Boolean preferred = Boolean.FALSE
 
     // Should warn user when stock is below safety stock level
@@ -41,24 +47,32 @@ class InventoryLevel {
     // Lead time in days (safety stock is lead time days x daily forecast quantity)
     BigDecimal expectedLeadTimeDays
 
+    // Replenishment period in days
+    BigDecimal replenishmentPeriodDays
+
+    // Demand time period in days
+    BigDecimal demandTimePeriodDays
+
     // Preferred bin location
     Location preferredBinLocation
 
-    // Location from which we should replenish stock
+    // Location from which we should replenish stock (could be external supplier or internal bin location)
     Location replenishmentLocation
 
-    // Preferred bin location (deprecated)
+    // Preferred bin location (@deprecated)
     String binLocation
 
     // ABC analysis class
     String abcClass
 
-    //
+    // Additional comments about
     String comments
 
     // Auditing
     Date dateCreated
     Date lastUpdated
+
+    static belongsTo = [inventory: Inventory]
 
     static mapping = {
         id generator: 'uuid'
@@ -67,12 +81,12 @@ class InventoryLevel {
         cache true
     }
 
-    static transients = ["forecastPeriod", "forecastPeriodOptions", "monthlyForecastQuantity"]
-    static belongsTo = [inventory: Inventory]
+    static transients = ["facilityLocation", "forecastPeriod", "forecastPeriodOptions", "monthlyForecastQuantity"]
 
     static constraints = {
         status(nullable: true)
-        product(nullable: false, unique: "inventory")
+        product(nullable: true, unique: ["inventory", "internalLocation"])
+        internalLocation(nullable:true)
         minQuantity(nullable: true, range: 0..2147483646)
         reorderQuantity(nullable: true, range: 0..2147483646)
         maxQuantity(nullable: true, range: 0..2147483646)
@@ -85,14 +99,16 @@ class InventoryLevel {
         abcClass(nullable: true)
         preferred(nullable: true)
         comments(nullable: true)
+        replenishmentPeriodDays(nullable: true)
+        demandTimePeriodDays(nullable: true)
+    }
+
+    Location getFacilityLocation() {
+        return inventory?.warehouse
     }
 
     def statusMessage(Long currentQuantity) {
         return InventoryUtil.getStatusMessage(status, minQuantity, reorderQuantity, maxQuantity, currentQuantity)
-    }
-
-    String toString() {
-        return "${product?.productCode}:${preferred}:${minQuantity}:${reorderQuantity}:${maxQuantity}:${lastUpdated}"
     }
 
     Integer getMonthlyForecastQuantity() {

@@ -16,32 +16,31 @@ import org.pih.warehouse.api.Putaway
 import org.pih.warehouse.api.PutawayItem
 import org.pih.warehouse.api.PutawayStatus
 import org.pih.warehouse.core.ActivityCode
+import org.pih.warehouse.core.Constants
 import org.pih.warehouse.core.Location
-import org.pih.warehouse.core.LocationService
 import org.pih.warehouse.inventory.InventoryItem
-import org.pih.warehouse.inventory.InventoryService
-import org.pih.warehouse.inventory.Transaction
 import org.pih.warehouse.inventory.TransferStockCommand
 import org.pih.warehouse.order.Order
 import org.pih.warehouse.order.OrderItem
 import org.pih.warehouse.order.OrderItemStatusCode
 import org.pih.warehouse.order.OrderStatus
-import org.pih.warehouse.order.OrderTypeCode
+import org.pih.warehouse.order.OrderType
 
 @Transactional
 class PutawayService {
 
-    LocationService locationService
-    InventoryService inventoryService
+    def locationService
+    def inventoryService
+    def productAvailabilityService
+    def grailsApplication
 
     def getPutawayCandidates(Location location) {
         List putawayItems = []
         List<Location> internalLocations = locationService.getInternalLocations(location,
                 [ActivityCode.RECEIVE_STOCK] as ActivityCode[])
 
-        List binLocationEntries = inventoryService.getQuantityByBinLocation(location)
+        List binLocationEntries = productAvailabilityService.getAvailableQuantityOnHandByBinLocation(location)
 
-        log.info "internalLocations " + internalLocations
         internalLocations.each { internalLocation ->
             List putawayItemsTemp = binLocationEntries.findAll {
                 it.binLocation == internalLocation
@@ -86,7 +85,7 @@ class PutawayService {
     }
 
     List<PutawayItem> getPendingItems(Location location) {
-        List<Order> orders = Order.findAllByOriginAndOrderTypeCode(location, OrderTypeCode.TRANSFER_ORDER)
+        List<Order> orders = Order.findAllByOriginAndOrderType(location, OrderType.findByCode(Constants.PUTAWAY_ORDER))
         List<Putaway> putaways = orders.collect { Putaway.createFromOrder(it) }
         List<PutawayItem> putawayItems = []
 
@@ -144,10 +143,11 @@ class PutawayService {
             command.otherBinLocation = putawayItem.putawayLocation
             command.order = order
             command.transferOut = Boolean.TRUE
-
-            Transaction transaction = inventoryService.transferStock(command)
-            transaction.save(failOnError: true)
+            command.disableRefresh = Boolean.TRUE
+            inventoryService.transferStock(command)
         }
+
+        grailsApplication.mainContext.publishEvent(new PutawayCompletedEvent(putaway))
 
         return order
     }
@@ -160,7 +160,8 @@ class PutawayService {
             order = new Order()
         }
 
-        order.orderTypeCode = OrderTypeCode.TRANSFER_ORDER
+        OrderType orderType = OrderType.findByCode(Constants.PUTAWAY_ORDER)
+        order.orderType = orderType
         order.status = OrderStatus.valueOf(putaway.putawayStatus.toString())
         if (!order.orderNumber) {
             order.orderNumber = "P-${putaway.putawayNumber}"
@@ -277,7 +278,7 @@ class PutawayService {
             throw new IllegalArgumentException("Facility is required")
         }
 
-        Integer quantityAvailable = inventoryService.getQuantity(facility?.inventory, internalLocation, inventoryItem)
+        Integer quantityAvailable = productAvailabilityService.getQuantityOnHandInBinLocation(inventoryItem, internalLocation)
         log.info "Quantity: ${quantity} vs ${quantityAvailable}"
 
         if (quantityAvailable < 0) {

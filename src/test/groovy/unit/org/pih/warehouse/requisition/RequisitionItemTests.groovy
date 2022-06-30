@@ -15,6 +15,7 @@ import org.pih.warehouse.picklist.PicklistItem
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.product.ProductPackage
 import org.pih.warehouse.requisition.Requisition
+import org.springframework.context.ApplicationEvent
 import org.pih.warehouse.requisition.RequisitionItem
 
 @Ignore
@@ -111,6 +112,7 @@ class RequisitionItemTests {
         mockDomain(Picklist, [picklist])
         mockDomain(RequisitionItem, [requisitionItem])
         mockDomain(PicklistItem, [picklistItem])
+        PicklistItem.metaClass.publishEvent = { ApplicationEvent event -> }
 
         requisition.picklist = picklist
         requisition.picklist.addToPicklistItems(picklistItem)

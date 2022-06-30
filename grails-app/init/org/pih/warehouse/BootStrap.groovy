@@ -43,6 +43,8 @@ import org.pih.warehouse.core.LocationType
 import org.pih.warehouse.core.Person
 import org.pih.warehouse.core.User
 import org.pih.warehouse.inventory.InventoryItem
+import org.pih.warehouse.invoice.InvoiceItemCandidate
+import org.pih.warehouse.invoice.InvoiceItem
 import org.pih.warehouse.inventory.Transaction
 import org.pih.warehouse.inventory.TransactionEntry
 import org.pih.warehouse.inventory.TransactionType
@@ -57,6 +59,7 @@ import org.pih.warehouse.product.Category
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.product.ProductAssociation
 import org.pih.warehouse.product.ProductGroup
+import org.pih.warehouse.product.ProductSearchDto
 import org.pih.warehouse.receiving.Receipt
 import org.pih.warehouse.receiving.ReceiptItem
 import org.pih.warehouse.requisition.Requisition
@@ -66,6 +69,7 @@ import org.pih.warehouse.shipping.ContainerType
 import org.pih.warehouse.shipping.Shipment
 import org.pih.warehouse.shipping.ShipmentItem
 import org.pih.warehouse.shipping.ShipmentType
+import org.pih.warehouse.core.Address
 import org.quartz.Scheduler
 import util.LiquibaseUtil
 
@@ -231,6 +235,18 @@ class BootStrap {
             ]
         }
 
+        JSON.registerObjectMarshaller(Address) { Address address ->
+            [
+                    address             : address.address,
+                    address2            : address.address2,
+                    city                : address.city,
+                    country             : address.country,
+                    description         : address.description,
+                    postalCode          : address.postalCode,
+                    stateOrProvince     : address.stateOrProvince,
+            ]
+        }
+
         JSON.registerObjectMarshaller(Location) { Location location ->
             [
                     id                   : location.id,
@@ -244,8 +260,17 @@ class BootStrap {
                     hasBinLocationSupport: location.hasBinLocationSupport(),
                     hasPackingSupport    : location.supports(ActivityCode.PACK_SHIPMENT),
                     hasPartialReceivingSupport : location.supports(ActivityCode.PARTIAL_RECEIVING),
+                    hasCentralPurchasingEnabled : location.supports(ActivityCode.ENABLE_CENTRAL_PURCHASING),
                     organizationName     : location?.organization?.name,
+                    organizationCode     : location?.organization?.code,
                     backgroundColor : location?.bgColor,
+                    zoneName : location?.zone?.name,
+                    zoneId : location?.zone?.id,
+                    active : location?.active,
+                    organization : location?.organization,
+                    manager: location?.manager,
+                    address: location?.address,
+                    supportedActivities: location.supportedActivities ?: location.locationType?.supportedActivities,
             ]
         }
 
@@ -276,26 +301,32 @@ class BootStrap {
 
         JSON.registerObjectMarshaller(PicklistItem) { PicklistItem picklistItem ->
             [
-                    id                  : picklistItem.id,
-                    status              : picklistItem.status,
-                    "picklist.id"       : picklistItem?.picklist?.id,
-                    "requisitionItem.id": picklistItem?.requisitionItem?.id,
-                    "inventoryItem.id"  : picklistItem.inventoryItem?.id,
-                    "product.name"      : picklistItem?.inventoryItem?.product?.name,
-                    "productCode"       : picklistItem?.inventoryItem?.product?.productCode,
-                    lotNumber           : picklistItem?.inventoryItem?.lotNumber,
-                    expirationDate      : picklistItem?.inventoryItem?.expirationDate?.format("MM/dd/yyyy"),
-                    "binLocation.id"    : picklistItem?.binLocation?.id,
-                    "binLocation.name"  : picklistItem?.binLocation?.name,
-                    quantityPicked      : picklistItem.quantity,
-                    reasonCode          : picklistItem.reasonCode,
-                    comment             : picklistItem.comment
+                    id                    : picklistItem.id,
+                    status                : picklistItem.status,
+                    "picklist.id"         : picklistItem?.picklist?.id,
+                    "requisitionItem.id"  : picklistItem?.requisitionItem?.id,
+                    "inventoryItem.id"    : picklistItem.inventoryItem?.id,
+                    "product.name"        : picklistItem?.inventoryItem?.product?.name,
+                    "productCode"         : picklistItem?.inventoryItem?.product?.productCode,
+                    lotNumber             : picklistItem?.inventoryItem?.lotNumber,
+                    expirationDate        : picklistItem?.inventoryItem?.expirationDate?.format("MM/dd/yyyy"),
+                    "binLocation.id"      : picklistItem?.binLocation?.id,
+                    "binLocation.name"    : picklistItem?.binLocation?.name,
+                    "binLocation.zoneId"  : picklistItem?.binLocation?.zone?.id,
+                    "binLocation.zoneName": picklistItem?.binLocation?.zone?.name,
+                    quantityPicked        : picklistItem.quantity,
+                    reasonCode            : picklistItem.reasonCode,
+                    comment               : picklistItem.comment
             ]
         }
 
 
         JSON.registerObjectMarshaller(Product) { Product product ->
             return product.toJson()
+        }
+
+        JSON.registerObjectMarshaller(ProductSearchDto) { ProductSearchDto productSearchDto ->
+            return productSearchDto.toJson()
         }
 
         JSON.registerObjectMarshaller(ProductAssociation) { ProductAssociation productAssociation ->
@@ -493,6 +524,90 @@ class BootStrap {
         JSON.registerObjectMarshaller(StocklistItem) { StocklistItem stocklistItem ->
             return stocklistItem.toJson()
         }
+
+        JSON.registerObjectMarshaller(InvoiceItem) { InvoiceItem invoiceItem ->
+            return invoiceItem.toJson()
+        }
+
+        JSON.registerObjectMarshaller(InvoiceItemCandidate) { InvoiceItemCandidate invoiceItemCandidate ->
+            return invoiceItemCandidate.toJson()
+        }
+
+
+
+        // ================================    Static Data    ============================================
+        //
+        // Use the 'demo' environment to create a database with 'static' and 'demo' data.  Then
+        // run the following:
+        //
+        // 		$ grails -Dgrails.env=demo run-app
+        //
+        // In another terminal, run through these commands to generate the appropriate
+        // changelog files for a new version of the data model
+        //
+        // 		$ grails db-diff-schema > grails-app/migrations/x.x.x/changelog-initial-schema.xml
+        // 		$ grails db-diff-index > grails-app/migrations/x.x.x/changelog-initial-indexes.xml
+        // 		$ grails db-diff-data > grails-app/migrations/x.x.x/changelog-initial-data.xml
+        //
+        // Migrating existing data to the new data model is still a work in progress, but you can
+        // use the previous versions changelogs.
+        //
+        log.info("Running liquibase changelog(s) ...")
+        Liquibase liquibase = null
+        try {
+
+            def connection = dataSource.getConnection()
+            if (connection == null) {
+                throw new RuntimeException("Connection could not be created.")
+            }
+            def classLoader = getClass().classLoader
+            def fileOpener = classLoader.loadClass("org.liquibase.grails.GrailsFileOpener").getConstructor().newInstance()
+
+            def database = DatabaseFactory.getInstance().findCorrectDatabaseImplementation(connection)
+            boolean isRunningMigrations = LiquibaseUtil.isRunningMigrations()
+            log.info("Liquibase running: " + isRunningMigrations)
+            log.info("Setting default schema to " + connection.catalog)
+            log.info("Product Version: " + database.databaseProductVersion)
+            log.info("Database Version: " + database.databaseMajorVersion + "." + database.databaseMinorVersion)
+            def ranChangeSets = database.getRanChangeSetList()
+            database.setDefaultSchemaName(connection.catalog)
+
+            //If nothing has been created yet, let's create all new database objects with the install scripts
+            if (!ranChangeSets) {
+                liquibase = new Liquibase("install/install.xml", fileOpener, database)
+                liquibase.update(null)
+            }
+
+            // Run through the updates in the master changelog
+            liquibase = new Liquibase("changelog.xml", fileOpener, database)
+            liquibase.update(null)
+        }
+        finally {
+            if (liquibase && liquibase.database) {
+                liquibase.database.close()
+            }
+        }
+        log.info("Finished running liquibase changelog(s)!")
+
+        // Create uploads directory if it doesn't already exist
+        uploadService.findOrCreateUploadsDirectory()
+
+        Boolean refreshAnalyticsDataOnStartup = grailsApplication.config.openboxes.refreshAnalyticsDataOnStartup.enabled
+        if (refreshAnalyticsDataOnStartup) {
+            // Refresh stock out data on startup to make sure the fact table is created
+            RefreshStockoutDataJob.triggerNow()
+
+            // Refresh demand data on startup to make sure the materialized views are created
+            RefreshDemandDataJob.triggerNow()
+
+            // Refresh inventory snapshot data
+            RefreshProductAvailabilityJob.triggerNow([forceRefresh: Boolean.TRUE]);
+        }
+    }
+
+
+    def destroy = {
+
     }
 
 }

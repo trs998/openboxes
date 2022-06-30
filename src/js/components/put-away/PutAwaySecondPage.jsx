@@ -1,13 +1,23 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import ReactTable from 'react-table';
-import PropTypes from 'prop-types';
+
 import update from 'immutability-helper';
 import fileDownload from 'js-file-download';
-import { getTranslate } from 'react-localize-redux';
-import { Tooltip } from 'react-tippy';
+import _ from 'lodash';
+import PropTypes from 'prop-types';
 import { confirmAlert } from 'react-confirm-alert';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import ReactTable from 'react-table';
+import { Tooltip } from 'react-tippy';
+
+import { fetchBreadcrumbsConfig, hideSpinner, showSpinner, updateBreadcrumbs } from 'actions';
+import SplitLineModal from 'components/put-away/SplitLineModal';
+import apiClient, { flattenRequest, parseResponse } from 'utils/apiClient';
+import customTreeTableHOC from 'utils/CustomTreeTable';
+import Filter from 'utils/Filter';
+import showLocationChangedAlert from 'utils/location-change-alert';
+import Select from 'utils/Select';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-table/react-table.css';
 
@@ -64,7 +74,7 @@ class PutAwaySecondPage extends Component {
   componentWillReceiveProps(nextProps) {
     showLocationChangedAlert(
       this.props.translate, this.state.location, nextProps.location,
-      () => { window.location = stringUrlInterceptor('/order/list?orderTypeCode=TRANSFER_ORDER&status=PENDING'); },
+      () => { window.location = stringUrlInterceptor('/order/list?orderTypeCode= PUTAWAY_ORDER&status=PENDING'); },
     );
 
     const location = this.state.location.id ? this.state.location : nextProps.location;
@@ -201,8 +211,14 @@ class PutAwaySecondPage extends Component {
       Filter,
     }, {
       Header: <Translate id="react.putAway.preferredBin.label" defaultMessage="Preferred bin" />,
-      accessor: 'preferredBin.name',
+      accessor: 'preferredBin',
       style: { whiteSpace: 'normal' },
+      Cell: props => (
+        <div>
+          {props.value && props.value.zoneName ? <div>{props.value.zoneName}:&nbsp;</div> : ''}
+          <div>{props.value ? props.value.name : ''}</div>
+        </div>
+      ),
       Filter,
     }, {
       Header: <Translate id="react.putAway.currentBin.label" defaultMessage="Current bin" />,
@@ -232,7 +248,8 @@ class PutAwaySecondPage extends Component {
 
         return (<Select
           options={this.state.bins}
-          objectValue
+          valueKey="id"
+          labelKey="name"
           value={_.get(this.state.putAway.putawayItems, `[${cellInfo.index}].${cellInfo.column.id}`) || null}
           onChange={value => this.changePutAway(update(this.state.putAway, {
             putawayItems: { [cellInfo.index]: { putawayLocation: { $set: value } } },
@@ -307,13 +324,20 @@ class PutAwaySecondPage extends Component {
               putawayLocation: {
                 id: val.putawayLocation.id ? val.putawayLocation.id : val.preferredBin.id,
                 name: val.putawayLocation.name ? val.putawayLocation.name : val.preferredBin.name,
+                zoneId: val.putawayLocation.id ? val.putawayLocation.zoneId :
+                  val.preferredBin.zoneId,
+                zoneName: val.putawayLocation.id ? val.putawayLocation.zoneName :
+                  val.preferredBin.zoneName,
               },
             }),
           );
 
           this.props.hideSpinner();
 
-          this.setState({ putAway: { ...putAway, putawayItems } });
+          const expanded = {};
+          _.forEach(putawayItems, (item, index) => { expanded[index] = true; });
+
+          this.setState({ expanded, putAway: { ...putAway, putawayItems } });
         })
         .catch(() => this.props.hideSpinner());
     }
@@ -348,14 +372,22 @@ class PutAwaySecondPage extends Component {
     this.props.showSpinner();
     const url = `/api/internalLocations?location.id=${this.props.location.id}&locationTypeCode=BIN_LOCATION`;
 
+    const mapBins = bins => (_.chain(bins)
+      .orderBy(['name'], ['asc']).value()
+    );
+
     return apiClient.get(url)
       .then((response) => {
-        const bins = _.map(response.data.data, bin => (
-          { value: { id: bin.id, name: bin.name }, label: bin.name }
-        ));
-        const expanded = {};
-        _.forEach(bins, (item, index) => { expanded[index] = true; });
-        this.setState({ bins, expanded }, () => this.props.hideSpinner());
+        const binGroups = _.partition(response.data.data, bin => (bin.zoneName));
+        const binsWithZone = _.chain(binGroups[0]).groupBy('zoneName')
+          .map((value, key) => ({ name: key, options: mapBins(value) }))
+          .orderBy(['label'], ['asc'])
+          .value();
+        const binsWithoutZone = mapBins(binGroups[1]);
+        this.setState(
+          { bins: [...binsWithZone, ...binsWithoutZone] },
+          () => this.props.hideSpinner(),
+        );
       })
       .catch(() => this.props.hideSpinner());
   }
@@ -521,6 +553,9 @@ class PutAwaySecondPage extends Component {
             putawayLocation: {
               id: val.putawayLocation.id ? val.putawayLocation.id : val.preferredBin.id,
               name: val.putawayLocation.name ? val.putawayLocation.name : val.preferredBin.name,
+              zoneId: val.putawayLocation.id ? val.putawayLocation.zoneId : val.preferredBin.zoneId,
+              zoneName: val.putawayLocation.id ? val.putawayLocation.zoneName :
+                val.preferredBin.zoneName,
             },
           }),
         );

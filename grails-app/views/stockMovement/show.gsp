@@ -1,5 +1,4 @@
-<%@ page import="org.pih.warehouse.requisition.RequisitionSourceType; org.pih.warehouse.requisition.RequisitionStatus" %>
-<%@ page import="org.pih.warehouse.shipping.ShipmentStatusCode" %>
+<%@ page import="org.pih.warehouse.requisition.RequisitionStatus; org.pih.warehouse.shipping.ShipmentStatusCode" %>
 <html>
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
@@ -53,10 +52,12 @@
         </g:if>
 
         <div class="button-group">
-            <g:link controller="stockMovement" action="list" class="button">
-                <img src="${resource(dir: 'images/icons/silk', file: 'text_list_bullets.png')}" />&nbsp;
-                <warehouse:message code="default.button.list.label" />
-            </g:link>
+            <g:hideIfIsNonInventoryManagedAndCanSubmitRequest>
+                <g:link controller="stockMovement" action="list" class="button">
+                    <img src="${resource(dir: 'images/icons/silk', file: 'text_list_bullets.png')}" />&nbsp;
+                    <warehouse:message code="default.button.list.label" />
+                </g:link>
+            </g:hideIfIsNonInventoryManagedAndCanSubmitRequest>
             <g:link controller="stockMovement" action="create" class="button">
                 <img src="${resource(dir: 'images/icons/silk', file: 'add.png')}" />&nbsp;
                 <warehouse:message code="default.button.create.label" />
@@ -64,70 +65,53 @@
         </div>
         <div class="button-group">
             <%-- TODO  Move status to stock movement; make consistent across all types --%>
-            <g:set var="hasBeenIssued" value="${stockMovement?.requisition?.status==RequisitionStatus.ISSUED}"/>
-            <g:set var="hasBeenReceived" value="${stockMovement?.shipment?.currentStatus==ShipmentStatusCode.RECEIVED}"/>
-            <g:set var="hasBeenPartiallyReceived" value="${stockMovement?.shipment?.currentStatus==ShipmentStatusCode.PARTIALLY_RECEIVED}"/>
-            <g:set var="hasBeenShipped" value="${stockMovement?.shipment?.currentStatus==ShipmentStatusCode.SHIPPED}"/>
-            <g:set var="hasBeenPending" value="${stockMovement?.shipment?.currentStatus==ShipmentStatusCode.PENDING}"/>
-            <g:set var="hasBeenPlaced" value="${hasBeenShipped || hasBeenPartiallyReceived}"/>
-            <g:set var="isFromOrder" value="${stockMovement?.isFromOrder}"/>
-            <g:set var="isSameDestination" value="${stockMovement?.destination?.id==session.warehouse.id}"/>
+            <g:set var="hasBeenPlaced" value="${stockMovement?.hasBeenShipped() || stockMovement?.hasBeenPartiallyReceived()}"/>
             <g:set var="isSameOrigin" value="${stockMovement?.origin?.id==session.warehouse.id}"/>
-            <g:set var="disableReceivingButton" value="${!(hasBeenIssued || (hasBeenPlaced && isFromOrder)) || !isSameDestination || !hasBeenPlaced || hasBeenReceived}"/>
-            <g:set var="isElectronicType" value="${stockMovement?.requisition?.sourceType == RequisitionSourceType.ELECTRONIC}"/>
-            <g:set var="disableEditButton"
-                   value="${hasBeenReceived || hasBeenPartiallyReceived || (!isSameOrigin && stockMovement?.origin?.isDepot() && hasBeenPending && !isElectronicType)}"/>
-            <g:set var="showRollbackLastReceiptButton" value="${hasBeenReceived || hasBeenPartiallyReceived}"/>
-            <g:if test="${hasBeenReceived}">
-                <g:set var="disabledMessage" value="${g.message(code:'stockMovement.hasAlreadyBeenReceived.message', args: [stockMovement?.identifier])}"/>
+            <g:if test="${stockMovement?.order}">
+                <g:link controller="stockTransfer" action="edit" id="${stockMovement?.order?.id}" class="button">
+                    <img src="${resource(dir: 'images/icons/silk', file: 'pencil.png')}" />&nbsp;
+                    <warehouse:message code="default.button.edit.label" />
+                </g:link>
             </g:if>
-            <g:elseif test="${!hasBeenPlaced && isFromOrder}">
-                <g:set var="disabledMessage" value="${g.message(code:'stockMovement.hasNotBeenPlaced.message', args: [stockMovement?.identifier])}"/>
-            </g:elseif>
-            <g:elseif test="${!(hasBeenShipped || hasBeenPartiallyReceived)}">
-                <g:set var="disabledMessage" value="${g.message(code:'stockMovement.hasNotBeenShipped.message', args: [stockMovement?.identifier])}"/>
-            </g:elseif>
-            <g:elseif test="${!hasBeenIssued}">
-                <g:set var="disabledMessage" value="${g.message(code:'stockMovement.hasNotBeenIssued.message', args: [stockMovement?.identifier])}"/>
-            </g:elseif>
-            <g:elseif test="${!isSameDestination}">
-                <g:set var="disabledMessage" value="${g.message(code:'stockMovement.isDifferentLocation.message')}"/>
-            </g:elseif>
-            <g:if test="${hasBeenReceived || hasBeenPartiallyReceived}">
-                <g:set var="disabledEditMessage" value="${g.message(code:'stockMovement.cantEditReceived.message')}"/>
-            </g:if>
-            <g:elseif test="${!isSameOrigin && stockMovement?.origin?.isDepot() && hasBeenPending && !isElectronicType}">
-                <g:set var="disabledEditMessage" value="${g.message(code:'stockMovement.isDifferentOrigin.message')}"/>
-            </g:elseif>
-            <g:link controller="stockMovement" action="edit" id="${stockMovement?.id}" class="button"
-                    disabled="${disableEditButton}" disabledMessage="${disabledEditMessage}">
-                <img src="${resource(dir: 'images/icons/silk', file: 'pencil.png')}" />&nbsp;
-                <warehouse:message code="default.button.edit.label" />
-            </g:link>
-            <g:link controller="partialReceiving" action="create" id="${stockMovement?.shipment?.id}" class="button"
-                    disabled="${disableReceivingButton}" disabledMessage="${disabledMessage}">
+            <g:else>
+                <g:link controller="stockMovement" action="edit" id="${stockMovement?.id}" class="button">
+                    <img src="${resource(dir: 'images/icons/silk', file: 'pencil.png')}" />&nbsp;
+                    <warehouse:message code="default.button.edit.label" />
+                </g:link>
+            </g:else>
+            <g:link controller="partialReceiving" action="create" id="${stockMovement?.shipment?.id}" class="button">
                 <img src="${resource(dir: 'images/icons/', file: 'handtruck.png')}" />&nbsp;
                 <warehouse:message code="default.button.receive.label" />
             </g:link>
             <g:isUserAdmin>
-                <g:if test="${showRollbackLastReceiptButton}">
+                <g:if test="${stockMovement?.hasBeenReceived() || stockMovement?.hasBeenPartiallyReceived()}">
                     <g:link controller="partialReceiving" action="rollbackLastReceipt" id="${stockMovement?.shipment?.id}" class="button">
                         <img src="${resource(dir: 'images/icons/silk', file: 'arrow_rotate_anticlockwise.png')}" />&nbsp;
                         <warehouse:message code="stockMovement.rollbackLastReceipt.label" />
                     </g:link>
                 </g:if>
-                <g:elseif test="${hasBeenIssued || (hasBeenPlaced && isFromOrder)}">
+                <g:elseif test="${stockMovement?.hasBeenIssued() || ((stockMovement?.hasBeenShipped() ||
+                        stockMovement?.hasBeenPartiallyReceived()) && stockMovement?.isFromOrder)}">
                     <g:link controller="stockMovement" action="rollback" id="${stockMovement.id}" class="button">
                         <img src="${resource(dir: 'images/icons/silk', file: 'arrow_rotate_anticlockwise.png')}" />&nbsp;
                         <warehouse:message code="default.button.rollback.label" />
                     </g:link>
                 </g:elseif>
-                <g:if test="${(hasBeenPending || !stockMovement?.shipment?.currentStatus) && (isSameOrigin || !stockMovement?.origin?.isDepot())}">
-                    <g:link controller="stockMovement" action="remove" id="${stockMovement.id}" params="[show:true]" class="button"
-                            onclick="return confirm('${warehouse.message(code: 'default.button.delete.confirm.message', default: 'Are you sure?')}');">
-                        <img src="${resource(dir: 'images/icons/silk', file: 'delete.png')}" />&nbsp;
-                        <warehouse:message code="default.button.delete.label" />
-                    </g:link>
+                <g:if test="${(stockMovement?.isPending() || !stockMovement?.shipment?.currentStatus) && (isSameOrigin || !stockMovement?.origin?.isDepot())}">
+                    <g:if test="${stockMovement?.order}">
+                        <g:link class="button" controller="stockTransfer" action="remove" id="${stockMovement?.id}" params="[orderId: stockMovement?.order?.id]"
+                                onclick="return confirm('${warehouse.message(code: 'default.button.delete.confirm.message', default: 'Are you sure?')}');">
+                            <img src="${resource(dir: 'images/icons/silk', file: 'delete.png')}" />
+                            &nbsp;<warehouse:message code="default.button.delete.label" />
+                        </g:link>
+                    </g:if>
+                    <g:else>
+                        <g:link controller="stockMovement" action="remove" id="${stockMovement.id}" params="[show:true]" class="button"
+                                onclick="return confirm('${warehouse.message(code: 'default.button.delete.confirm.message', default: 'Are you sure?')}');">
+                            <img src="${resource(dir: 'images/icons/silk', file: 'delete.png')}" />&nbsp;
+                            <warehouse:message code="default.button.delete.label" />
+                        </g:link>
+                    </g:else>
                 </g:if>
             </g:isUserAdmin>
             <g:isSuperuser>
@@ -195,7 +179,7 @@
                                 <g:message code="stockMovement.stocklist.label"/>
                             </td>
                             <td class="value">
-                                ${stockMovement?.stocklist?.name?:"N/A"}
+                                ${stockMovement?.stocklist?.name?:"None"}
                             </td>
                         </tr>
                         <tr class="prop">
@@ -227,7 +211,12 @@
                                 <g:message code="shipping.shipmentType.label"/>
                             </td>
                             <td class="value">
-                                <format:metadata obj="${stockMovement?.shipmentType?.name}"/>
+                                <g:if test="${stockMovement?.shipmentType}">
+                                    <format:metadata obj="${stockMovement?.shipmentType?.name}"/>
+                                </g:if>
+                                <g:else>
+                                    ${g.message(code:"default.none.label")}
+                                </g:else>
                             </td>
                         </tr>
                         <tr class="prop">
@@ -241,22 +230,22 @@
                                 </g:hasRoleFinance>
                             </td>
                         </tr>
+                        <g:if test="${stockMovement?.shipment?.orders}">
+                            <tr class="prop">
+                                <td class="name">
+                                    <g:message code="order.label"/>
+                                </td>
+                                <td class="value">
+                                    <g:each var="order" in="${stockMovement?.shipment?.orders}">
+                                        <g:link controller="order" action="show" id="${order?.id}" params="[override:true]">
+                                            ${g.message(code:'default.view.label', args: [g.message(code: 'order.label')])}
+                                            ${order.orderNumber}
+                                        </g:link>
+                                    </g:each>
+                                </td>
+                            </tr>
+                        </g:if>
                         <g:isSuperuser>
-                            <g:if test="${stockMovement?.shipment?.orders}">
-                                <tr class="prop">
-                                    <td class="name">
-                                        <g:message code="order.label"/>
-                                    </td>
-                                    <td class="value">
-                                        <g:each var="order" in="${stockMovement?.shipment?.orders}">
-                                            <g:link controller="order" action="show" id="${order?.id}" params="[override:true]">
-                                                ${g.message(code:'default.view.label', args: [g.message(code: 'order.label')])}
-                                                ${order.orderNumber}
-                                            </g:link>
-                                        </g:each>
-                                    </td>
-                                </tr>
-                            </g:if>
                             <g:if test="${stockMovement.requisition}">
                                 <tr class="prop">
                                     <td class="name">

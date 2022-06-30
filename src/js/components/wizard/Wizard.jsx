@@ -1,10 +1,12 @@
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import PropTypes from 'prop-types';
 
-import WizardSteps from '../wizard/WizardSteps';
-import WizardPage from '../wizard/WizardPage';
-import WizardTitle from '../wizard/WizardTitle';
+import PropTypes from 'prop-types';
+import { connect } from 'react-redux';
+
+import WizardPage from 'components/wizard/WizardPage';
+import WizardSteps from 'components/wizard/WizardSteps';
+import WizardTitle from 'components/wizard/WizardTitle';
+
 
 /** Wizard component. */
 class Wizard extends Component {
@@ -78,14 +80,14 @@ class Wizard extends Component {
   render() {
     const { currentPage, values } = this.state;
     const {
-      title, pageList, stepList, additionalTitle, additionalProps,
+      title, pageList, stepList, additionalTitle, additionalProps, showStepNumber,
     } = this.props;
 
     return (
       <div className="content-wrap">
-        <WizardSteps steps={stepList} currentStep={currentPage} />
+        <WizardTitle title={title} additionalTitle={additionalTitle} values={values} />
+        <WizardSteps steps={stepList} currentStep={currentPage} showStepNumber={showStepNumber} />
         <div className="panel panel-primary">
-          <WizardTitle title={title} additionalTitle={additionalTitle} />
           <WizardPage
             pageList={pageList}
             currentPage={currentPage}
@@ -116,7 +118,7 @@ Wizard.propTypes = {
   initialValues: PropTypes.shape({
     shipmentStatus: PropTypes.string,
   }),
-  title: PropTypes.string.isRequired,
+  title: PropTypes.arrayOf(PropTypes.shape({})).isRequired,
   additionalTitle: PropTypes.oneOf([PropTypes.string, PropTypes.func]),
   currentPage: PropTypes.number.isRequired,
   prevPage: PropTypes.number.isRequired,
@@ -124,6 +126,7 @@ Wizard.propTypes = {
   stepList: PropTypes.arrayOf(PropTypes.string).isRequired,
   updateWizardValues: PropTypes.func,
   additionalProps: PropTypes.shape({}),
+  showStepNumber: PropTypes.bool,
 };
 
 Wizard.defaultProps = {
@@ -131,4 +134,5 @@ Wizard.defaultProps = {
   additionalProps: {},
   additionalTitle: null,
   updateWizardValues: () => {},
+  showStepNumber: false,
 };

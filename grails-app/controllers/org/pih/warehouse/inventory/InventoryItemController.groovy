@@ -13,11 +13,13 @@ import grails.converters.JSON
 import grails.gorm.transactions.Transactional
 import grails.validation.ValidationException
 import groovy.time.TimeCategory
+import org.grails.plugins.csv.CSVWriter
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.core.Person
 import org.pih.warehouse.core.User
 import org.pih.warehouse.order.Order
 import org.pih.warehouse.order.OrderItem
+import org.pih.warehouse.order.OrderItemStatusCode
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.product.ProductException
 import org.pih.warehouse.requisition.Requisition
@@ -43,6 +45,8 @@ class InventoryItemController {
     def requisitionService
     def orderService
     def forecastingService
+    def userService
+    def productAvailabilityService
     GrailsApplication grailsApplication
 
 
@@ -71,7 +75,6 @@ class InventoryItemController {
 
             // now populate the rest of the commmand object
             inventoryService.getStockCardCommand(cmd, params)
-
             [commandInstance: cmd]
         } catch (ProductException e) {
             flash.message = e.message
@@ -97,10 +100,42 @@ class InventoryItemController {
         cmd.warehouse = currentLocation
         def commandInstance = inventoryService.getStockCardCommand(cmd, params)
         def quantityMap = inventoryService.getCurrentStockAllLocations(commandInstance?.product, currentLocation, currentUser)
-        def targetUri = "/inventoryItem/showStockCard/${commandInstance?.product?.id}"
-        log.info "${controllerName}.${actionName}: " + (System.currentTimeMillis() - startTime) + " ms"
+        if (params.download && quantityMap) {
+            def sw = new StringWriter()
 
-        render(template: "showCurrentStockAllLocations", model: [commandInstance: commandInstance, quantityMap: quantityMap, targetUri: targetUri])
+            def csv = new CSVWriter(sw, {
+                "Code" { it.code }
+                "Product" { it.product }
+                "Location Group" { it.locationGroup }
+                "Location" { it.location }
+                "Quantity on Hand" { it.qtyOnHand }
+                "Total Value" { it.totalValue }
+            })
+
+            quantityMap.each {
+                it.each { key, values ->
+                    values.locations.each { value ->
+                        csv << [
+                                code         : commandInstance?.product?.productCode,
+                                product      : commandInstance?.product?.name,
+                                locationGroup: key ?: g.message(code: 'locationGroup.empty.label'),
+                                location     : value?.location?.name,
+                                qtyOnHand    : value.quantity,
+                                totalValue   : value.value,
+                        ]
+                    }
+                }
+            }
+
+            response.setHeader("Content-disposition", "attachment; filename=\"All-Locations-${commandInstance?.product?.productCode}.csv\"")
+            render(contentType: "text/csv", text: sw.toString(), encoding: "UTF-8")
+            return
+        } else {
+            def targetUri = "/inventoryItem/showStockCard/${commandInstance?.product?.id}"
+            log.info "${controllerName}.${actionName}: " + (System.currentTimeMillis() - startTime) + " ms"
+
+            render(template: "showCurrentStockAllLocations", model: [commandInstance: commandInstance, quantityMap: quantityMap, targetUri: targetUri])
+        }
     }
 
     def showAlternativeProducts(StockCardCommand cmd) {
@@ -108,17 +143,24 @@ class InventoryItemController {
         def product = Product.get(params.id)
         def location = Location.get(session?.warehouse?.id)
 
-        def products = product.alternativeProducts() as List
+        def associations = product?.associations
+        def products = product?.associatedProducts() as List
         log.info "Products " + products
-        def quantityMap = [:]
+        def quantityAvailableMap = [:]
         if (!products.isEmpty()) {
-            quantityMap = inventoryService.getQuantityByProductMap(location, products)
+            quantityAvailableMap = productAvailabilityService.getQuantityAvailableToPromiseByProduct(location, products)
         }
-        def totalQuantity = quantityMap.values().sum() ?: 0
+
+        def totalQuantity = quantityAvailableMap.values().sum() ?: 0
 
         log.info "${controllerName}.${actionName}: " + (System.currentTimeMillis() - startTime) + " ms"
 
-        render(template: "showProductGroups", model: [product: product, totalQuantity: totalQuantity, quantityMap: quantityMap])
+        render(template: "showProductAssociations", model: [
+            product: product,
+            associations: associations?.sort { it.code },
+            quantityAvailableMap: quantityAvailableMap,
+            totalQuantity: totalQuantity,
+        ])
     }
 
 
@@ -137,13 +179,20 @@ class InventoryItemController {
         def balance = [:]
         def count = [:]
         def transactionMap = commandInstance?.getTransactionLogMap(false)
-        def previousTransaction = null
+        Transaction previousTransaction = null
 
 
         transactionMap.each { Transaction transaction, List transactionEntries ->
 
+            // skip current transaction if it is internal and is connected to previous transaction
+            if (transaction.isInternal && previousTransaction == transaction.otherTransaction)  {
+                return
+            }
+
+            TransactionCode currentTransactionCode = transaction?.transactionType?.transactionCode
+
             // For PRODUCT INVENTORY transactions we just need to clear the balance completely and start over
-            if (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.PRODUCT_INVENTORY) {
+            if (currentTransactionCode == TransactionCode.PRODUCT_INVENTORY) {
                 balance = [:]
                 count = [:]
                 totalCredit = 0
@@ -153,6 +202,9 @@ class InventoryItemController {
             transactionEntries.eachWithIndex { TransactionEntry transactionEntry, i ->
 
                 boolean isBaseline = false
+                boolean isCredit = false
+                boolean isDebit = false
+
                 String index = (transactionEntry.binLocation?.name ?: "DefaultBin") + "-" + (transactionEntry?.inventoryItem?.lotNumber ?: "DefaultLot")
 
                 if (!balance[index]) {
@@ -160,29 +212,34 @@ class InventoryItemController {
                     count[index] = 0
                 }
 
-                if (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.DEBIT) {
-                    balance[index] -= transactionEntry?.quantity
+                if (transaction.isInternal) {
                     totalDebit += transactionEntry?.quantity
-                } else if (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.CREDIT) {
-                    balance[index] += transactionEntry?.quantity
                     totalCredit += transactionEntry?.quantity
-                } else if (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.INVENTORY) {
-                    balance[index] = transactionEntry?.quantity
-                    count[index] = transactionEntry?.quantity
-                } else if (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.PRODUCT_INVENTORY) {
-                    balance[index] += transactionEntry?.quantity
-                    count[index] += transactionEntry?.quantity
+                } else {
+                    switch (currentTransactionCode) {
+                        case TransactionCode.DEBIT:
+                            balance[index] -= transactionEntry?.quantity
+                            totalDebit += transactionEntry?.quantity
+                            isDebit = transactionEntry?.quantity > 0
+                            isCredit = transactionEntry.quantity < 0
+                            break
+                        case TransactionCode.CREDIT:
+                            balance[index] += transactionEntry?.quantity
+                            totalCredit += transactionEntry?.quantity
+                            isDebit = transactionEntry.quantity < 0
+                            isCredit = transactionEntry?.quantity >= 0
+                            break
+                        case TransactionCode.INVENTORY:
+                            balance[index] = transactionEntry?.quantity
+                            count[index] = transactionEntry?.quantity
+                            break
+                        case TransactionCode.PRODUCT_INVENTORY:
+                            balance[index] += transactionEntry?.quantity
+                            count[index] += transactionEntry?.quantity
+                            isBaseline = i == 0
+                            break
+                    }
                 }
-
-                if (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.PRODUCT_INVENTORY && i == 0) {
-                    isBaseline = true
-                }
-
-                boolean isCredit = (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.CREDIT && transactionEntry?.quantity >= 0) ||
-                        (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.DEBIT && transactionEntry.quantity < 0)
-
-                boolean isDebit = (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.DEBIT && transactionEntry?.quantity > 0) ||
-                        (transaction?.transactionType?.transactionCode == org.pih.warehouse.inventory.TransactionCode.CREDIT && transactionEntry.quantity < 0)
 
                 // Normalize quantity (inventory transactions were all converted to CREDIT so some may have negative quantity)
                 def quantity = (transactionEntry.quantity > 0) ? transactionEntry.quantity : -transactionEntry.quantity
@@ -190,25 +247,43 @@ class InventoryItemController {
                 String transactionYear = (transaction.transactionDate.year + 1900).toString()
                 String transactionMonth = (transaction.transactionDate.month).toString()
 
+                // FIXME Find a better way to get binLocation of the "otherTransaction" for internal transaction
+                def otherTransactionEntries = transaction.otherTransaction?.transactionEntries;
+                def otherBinLocation = transaction.isInternal && otherTransactionEntries.size() > 0 ? otherTransactionEntries[0].binLocation : null
+
+                def sourceBinLocation = transactionEntry.binLocation;
+                def destinationBinLocation = null;
+
+                if (transaction.isInternal) {
+                    if (currentTransactionCode == TransactionCode.DEBIT) {
+                        destinationBinLocation = otherBinLocation
+                    } else {
+                        sourceBinLocation = otherBinLocation
+                        destinationBinLocation = transactionEntry.binLocation
+                    }
+                }
                 stockHistoryList << [
-                        transactionYear  : transactionYear,
-                        transactionMonth : transactionMonth,
-                        transactionDate  : transaction.transactionDate,
-                        transactionCode  : transaction?.transactionType?.transactionCode,
-                        transaction      : transaction,
-                        shipment         : null,
-                        requisition      : null,
-                        binLocation      : transactionEntry.binLocation,
-                        inventoryItem    : transactionEntry.inventoryItem,
-                        comments         : transactionEntry.comments,
-                        quantity         : quantity,
-                        isDebit          : isDebit,
-                        isCredit         : isCredit,
-                        balance          : balance.values().sum(),
-                        showDetails      : (i == 0),
-                        isBaseline       : isBaseline,
-                        isSameTransaction: (previousTransaction?.id == transaction?.id),
+                        transactionYear         : transactionYear,
+                        transactionMonth        : transactionMonth,
+                        transactionDate         : transaction.transactionDate,
+                        transactionCode         : currentTransactionCode,
+                        transaction             : transaction,
+                        shipment                : null,
+                        requisition             : null,
+                        destinationBinLocation  : destinationBinLocation,
+                        binLocation             : sourceBinLocation,
+                        inventoryItem           : transactionEntry.inventoryItem,
+                        comments                : transactionEntry.comments,
+                        quantity                : quantity,
+                        isDebit                 : isDebit,
+                        isCredit                : isCredit,
+                        balance                 : balance.values().sum(),
+                        showDetails             : (i == 0),
+                        isBaseline              : isBaseline,
+                        isSameTransaction       : (previousTransaction?.id == transaction?.id),
+                        isInternal              : transaction.isInternal,
                 ]
+
                 previousTransaction = transaction
             }
 
@@ -220,8 +295,14 @@ class InventoryItemController {
         log.info "${controllerName}.${actionName}: " + (System.currentTimeMillis() - startTime) + " ms"
 
         if (params.print) {
-            render(template: "printStockHistory", model: [commandInstance: commandInstance, stockHistoryList: stockHistoryList,
-                                                          totalBalance   : totalBalance, totalCount: totalCount, totalCredit: totalCredit, totalDebit: totalDebit])
+            render(template: "printStockHistory", model: [
+                    commandInstance     : commandInstance,
+                    stockHistoryList    : stockHistoryList,
+                    totalBalance        : totalBalance,
+                    totalCount          : totalCount,
+                    totalCredit         : totalCredit,
+                    totalDebit          : totalDebit
+            ])
         } else {
             stockHistoryList = stockHistoryList.groupBy({ it.transactionYear })
             def groupedStockHistoryList = [:]
@@ -229,17 +310,23 @@ class InventoryItemController {
                 history = history.groupBy { it.transactionMonth }
                 groupedStockHistoryList.get(year, [:]) << history
             }
-            render(template: "showStockHistory", model: [commandInstance: commandInstance, stockHistoryList: groupedStockHistoryList,
-                                                          totalBalance   : totalBalance, totalCount: totalCount, totalCredit: totalCredit, totalDebit: totalDebit])
+            render(template: "showStockHistory", model: [
+                    commandInstance     : commandInstance,
+                    stockHistoryList    : groupedStockHistoryList,
+                    totalBalance        : totalBalance,
+                    totalCount          : totalCount,
+                    totalCredit         : totalCredit,
+                    totalDebit          : totalDebit
+            ])
         }
     }
 
     def showSuppliers() {
 
         def productInstance = Product.get(params.id)
+        Location currentLocation = Location.get(session?.warehouse?.id)
 
-
-        render(template: "showSuppliers", model: [productInstance: productInstance])
+        render(template: "showSuppliers", model: [productInstance: productInstance, currentLocation: currentLocation])
     }
 
 
@@ -261,7 +348,7 @@ class InventoryItemController {
             )
         }
         orderItems = orderService.getPendingInboundOrderItems(location, product)
-        orderItems.collect {
+        orderItems.findAll {orderItem -> orderItem.orderItemStatusCode != OrderItemStatusCode.CANCELED}.collect {
             def existingItem = itemsMap.find {k, v -> k instanceof OrderItem && k.actualReadyDate == it.actualReadyDate && k.order == it.order}
             if (!existingItem) {
                 itemsMap.put(it, [
@@ -291,13 +378,13 @@ class InventoryItemController {
         requisitionItems = requisitionService.getPendingRequisitionItems(location, product)
         requisitionItems.groupBy { it.requisition }.collect { k, v ->
             itemsMap.put(k, [
+                    picklistItemsByLot: k?.picklist?.getPicklistItemsByLot(product),
                     quantityRequested: v.quantity.sum(),
                     quantityRequired: v.sum() { RequisitionItem requisitionItem -> requisitionItem.calculateQuantityRequired() },
                     quantityPicked: v.sum() { RequisitionItem requisitionItem -> requisitionItem.calculateQuantityPicked() },
             ]
             )
         }
-
 
         log.info "itemsMap: " + itemsMap
 
@@ -324,7 +411,7 @@ class InventoryItemController {
         DateFormat monthFormat = new SimpleDateFormat("MMM yyyy")
         monthFormat.timeZone = TimeZone.default
 
-        def requisitionItemsDemandDetails = forecastingService.getDemandDetailsForDemandTab(
+        def requisitionItemsDemandDetails = forecastingService.getDemandDetails(
             cmd.warehouse,
             destination,
             commandInstance?.product,
@@ -340,7 +427,6 @@ class InventoryItemController {
         )
 
         requisitionItemsDemandDetails = requisitionItemsDemandDetails.collect {
-            def quantityIssued = RequisitionItem.get(it?.request_item_id)?.getQuantityIssued()
             [
                     status           : it?.request_status,
                     productCode      : it?.product_code,
@@ -354,7 +440,7 @@ class InventoryItemController {
                     dateRequested    : it?.date_requested,
                     monthRequested   : monthFormat.format(it?.date_requested),
                     quantityRequested: it?.quantity_requested ?: 0,
-                    quantityIssued   : quantityIssued ?: 0,
+                    quantityIssued   : it?.quantity_picked ?: 0,
                     quantityDemand   : it?.quantity_demand ?: 0,
                     reasonCode       : it?.reason_code_classification,
             ]
@@ -470,6 +556,8 @@ class InventoryItemController {
         // Compute the total quantity for the given product
         commandInstance.totalQuantity = inventoryService.getQuantityByProductMap(transactionEntryList)[productInstance] ?: 0
 
+        commandInstance.totalQuantityAvailableToPromise = inventoryService.getQuantityAvailableToPromise(commandInstance.product, commandInstance?.inventory?.warehouse)
+
         // FIXME Use this method instead of getQuantityByProductMap
         // NEED to add tests before we introduce this change
         //commandInstance.totalQuantity = inventoryService.getQuantityOnHand(locationInstance, productInstance)
@@ -489,6 +577,10 @@ class InventoryItemController {
         log.info("Before saving record inventory " + params)
         inventoryService.saveRecordInventoryCommand(commandInstance, params)
         if (!commandInstance.hasErrors()) {
+            // Recalculate product availability after the changes in the inventory
+            productAvailabilityService.refreshProductsAvailability(commandInstance?.inventory?.warehouse?.id,
+                    [commandInstance?.product?.id], false)
+
             redirect(action: "showStockCard", params: ['product.id': commandInstance.product.id])
             return
         }
@@ -742,10 +834,23 @@ class InventoryItemController {
                     return
                 }
             }
+
+            if(itemInstance.product && itemInstance.product.lotAndExpiryControl && (!params.expirationDate || !params.lotNumber)) {
+                flash.error = "${warehouse.message(code: 'inventoryItem.lotAndExpiryControl.message')}"
+                redirect(controller: "inventoryItem", action: "showStockCard", id: productInstance?.id)
+                return
+            }
+
             itemInstance.properties = params
 
             // FIXME Temporary hack to handle a changed values for these two fields
             itemInstance.lotNumber = params?.lotNumber
+
+            if (!itemInstance.product.lotAndExpiryControl && !itemInstance.lotNumber) {
+                flash.error = "${warehouse.message(code: 'inventoryItem.blankLot.message')}"
+                redirect(controller: "inventoryItem", action: "showStockCard", id: productInstance?.id)
+                return
+            }
 
             if (!itemInstance.hasErrors() && itemInstance.save(flush: true)) {
                 flash.message = "${warehouse.message(code: 'default.updated.message', args: [warehouse.message(code: 'inventoryItem.label', default: 'Inventory item'), itemInstance.id])}"
@@ -947,5 +1052,47 @@ class InventoryItemController {
             }
         }
         redirect(action: "showStockCard", params: ['product.id': productInstance?.id])
+    }
+
+    def recall = {
+        InventoryItem inventoryItem = InventoryItem.get(params.id)
+        if (userService.isUserAdmin(session.user)) {
+            if (inventoryItem.lotNumber) {
+                inventoryItem.lotStatus = LotStatusCode.RECALLED
+
+                // Disable the refresh event, the quantity available calculation will be done manually
+                // to display the latest value on the Stock Card
+                inventoryItem.disableRefresh = Boolean.TRUE
+                inventoryItem.save(flush: true)
+
+                productAvailabilityService.refreshProductsAvailability(null, [inventoryItem?.product?.id], false)
+
+                flash.message = "${warehouse.message(code: 'inventoryItem.recall.message')}"
+            } else {
+                flash.message = "${warehouse.message(code: 'inventoryItem.recallError.message')}"
+            }
+        } else {
+            flash.message = "${warehouse.message(code: 'errors.noPermissions.label')}"
+        }
+        redirect(action: 'showLotNumbers', params: ['product.id': inventoryItem?.product?.id])
+    }
+
+    def revertRecall = {
+        InventoryItem inventoryItem = InventoryItem.get(params.id)
+        if (userService.isUserAdmin(session.user)) {
+            inventoryItem.lotStatus = null
+
+            // Disable the refresh event, the quantity available calculation will be done manually
+            // to display the latest value on the Stock Card
+            inventoryItem.disableRefresh = Boolean.TRUE
+            inventoryItem.save(flush: true)
+
+            productAvailabilityService.refreshProductsAvailability(null, [inventoryItem?.product?.id], false)
+
+            flash.message = "${warehouse.message(code: 'inventoryItem.revertRecall.message')}"
+        } else {
+            flash.message = "${warehouse.message(code: 'errors.noPermissions.label')}"
+        }
+        redirect(action: 'showLotNumbers', params: ['product.id': inventoryItem?.product?.id])
     }
 }

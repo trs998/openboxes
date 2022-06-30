@@ -1,12 +1,17 @@
 import React from 'react';
+
 import PropTypes from 'prop-types';
 import { stringUrlInterceptor } from '../utils/apiClient';
 
 function handleClick(onClick, event, link) {
   event.preventDefault();
   const newWindow = window.open('', '_blank');
+  if (onClick) {
   onClick()
     .then(() => { newWindow.location.href = stringUrlInterceptor(link); });
+  } else {
+    newWindow.location.href = link;
+  }
 }
 
 const DocumentButton = ({

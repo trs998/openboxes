@@ -1,15 +1,16 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
+
+import _ from 'lodash';
 import PropTypes from 'prop-types';
-import { Tooltip } from 'react-tippy';
-import { connect } from 'react-redux';
 import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import { Tooltip } from 'react-tippy';
+
+import TableBody from 'components/form-elements/TableBody';
+import TableBodyVirtualized from 'components/form-elements/TableBodyVirtualized';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-tippy/dist/tippy.css';
-
-import TableBody from './TableBody';
-import TableBodyVirtualized from './TableBodyVirtualized';
-import Translate, { translateWithDefaultMessage } from '../../utils/Translate';
 
 class FieldArrayComponent extends Component {
   constructor(props) {
@@ -52,11 +53,12 @@ class FieldArrayComponent extends Component {
       fieldsConfig, properties, fields, isPaginated,
     } = this.props;
     const AddButton = fieldsConfig.addButton;
-    const { maxTableHeight, virtualized } = fieldsConfig;
-    const addRow = (row = {}, index = null) => {
+    const { maxTableHeight, virtualized, overflowStyle = 'scroll' } = fieldsConfig;
+    const addRow = (row = {}, index = null, shouldScroll = true) => {
       if (index === null) {
         const table = document.querySelectorAll('[role="rowgroup"]')[0];
-        if (table) {
+        // lines can also be added on modals and no scroll should be applied then
+        if (table && shouldScroll) {
           table.scrollIntoView({ block: 'end' });
         }
         fields.push(row);
@@ -97,21 +99,31 @@ class FieldArrayComponent extends Component {
           <div className="d-flex flex-row border-bottom font-weight-bold">
             {_.map(fieldsConfig.fields, (config, name) => {
               const dynamicAttr = config.getDynamicAttr ? config.getDynamicAttr(properties) : {};
-              const { hide } = dynamicAttr;
+              const { hide, headerHtml } = dynamicAttr;
+              const flexWidth = dynamicAttr.flexWidth || config.flexWidth;
+              const fixedWidth = dynamicAttr.fixedWidth || config.fixedWidth;
+
               if (!hide) {
                 return (
                   <div
                     key={name}
                     className={`${config.headerClassName ? config.headerClassName : ''}`}
                     style={{
-                      flex: config.fixedWidth ? `0 1 ${config.fixedWidth}` : `${config.flexWidth || '12'} 1 0`,
+                      flex: fixedWidth ? `0 1 ${fixedWidth}` : `${flexWidth || '12'} 1 0`,
                       minWidth: 0,
                       textAlign: config.headerAlign ? config.headerAlign : 'center',
                     }}
                   >
                     <Tooltip
-                      html={(config.label &&
-                        <div>{this.props.translate(config.label, config.defaultMessage)}</div>)}
+                      html={config.headerTooltip ? (
+                        <div>
+                          {this.props.translate(config.headerTooltip, config.headerDefaultTooltip)}
+                        </div>
+                      ) : (config.label &&
+                        <div>
+                          {this.props.translate(config.label, config.defaultMessage)}
+                        </div>
+                      )}
                       theme="transparent"
                       arrow="true"
                       delay="150"
@@ -119,9 +131,14 @@ class FieldArrayComponent extends Component {
                       hideDelay="50"
                     >
                       <div
-                        className={`mx-2 text-truncate font-size-xs ${config.required ? 'required' : ''}`}
-                      >{config.label &&
-                      <Translate id={config.label} defaultMessage={config.defaultMessage} />}
+                        className={`mx-2 text-truncate ${config.required ? 'arrayfield-header-required' : ''}`}
+                        style={{
+                          fontSize: fieldsConfig.headerFontSize ? fieldsConfig.headerFontSize : '0.875rem',
+                        }}
+                      >
+                        { headerHtml && headerHtml() }
+                        { config.label && !headerHtml &&
+                          <Translate id={config.label} defaultMessage={config.defaultMessage} />}
                       </div>
                     </Tooltip>
                   </div>);
@@ -132,7 +149,7 @@ class FieldArrayComponent extends Component {
         </div>
         <div
           className="text-center border mb-1 flex-grow-1 table-content"
-          style={{ overflowY: virtualized && isPaginated ? 'hidden' : 'scroll', maxHeight: maxTableHeight }}
+          style={{ overflowY: virtualized && isPaginated ? 'hidden' : overflowStyle, maxHeight: maxTableHeight }}
         >
           <TableBodyComponent
             fields={fields}

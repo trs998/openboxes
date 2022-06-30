@@ -1,18 +1,20 @@
 import React, { Component } from 'react';
-import PropTypes from 'prop-types';
+
 import _ from 'lodash';
+import PropTypes from 'prop-types';
 import { connect } from 'react-redux';
 
-import ModalWrapper from '../../form-elements/ModalWrapper';
-import LabelField from '../../form-elements/LabelField';
-import ArrayField from '../../form-elements/ArrayField';
-import TextField from '../../form-elements/TextField';
-import SelectField from '../../form-elements/SelectField';
-import apiClient from '../../../utils/apiClient';
-import { showSpinner, hideSpinner } from '../../../actions';
-import Translate from '../../../utils/Translate';
-import { debounceAvailableItemsFetch } from '../../../utils/option-utils';
-import renderHandlingIcons from '../../../utils/product-handling-icons';
+import { hideSpinner, showSpinner } from 'actions';
+import ArrayField from 'components/form-elements/ArrayField';
+import LabelField from 'components/form-elements/LabelField';
+import ModalWrapper from 'components/form-elements/ModalWrapper';
+import SelectField from 'components/form-elements/SelectField';
+import TextField from 'components/form-elements/TextField';
+import apiClient from 'utils/apiClient';
+import { debounceAvailableItemsFetch } from 'utils/option-utils';
+import renderHandlingIcons from 'utils/product-handling-icons';
+import Translate from 'utils/Translate';
+
 
 const FIELDS = {
   reasonCode: {
@@ -46,7 +48,7 @@ const FIELDS = {
       <button
         type="button"
         className="btn btn-outline-success btn-xs"
-        onClick={() => addRow({})}
+        onClick={() => addRow({}, null, false)}
       ><Translate id="react.default.button.addCustomSubstitution.label" defaultMessage="Add custom substitution" />
       </button>
     ),
@@ -57,7 +59,7 @@ const FIELDS = {
         label: 'react.stockMovement.product.label',
         defaultMessage: 'Product',
         headerAlign: 'left',
-        flexWidth: '9.5',
+        flexWidth: '6',
         attributes: {
           async: true,
           openOnClick: false,
@@ -67,6 +69,7 @@ const FIELDS = {
           options: [],
           showValueTooltip: true,
           className: 'text-left',
+          showLabel: true,
           optionRenderer: option => (
             <strong style={{ color: option.color ? option.color : 'black' }} className="d-flex align-items-center">
               {option.label}
@@ -83,6 +86,14 @@ const FIELDS = {
               {renderHandlingIcons(option ? option.handlingIcons : [])}
             </span>
           ),
+          formatValue: value => (
+            <span className="d-flex">
+              <span className="text-truncate">
+                {value.name || ''}
+              </span>
+              {renderHandlingIcons(value ? value.handlingIcons : null)}
+            </span>
+          ),
         },
         getDynamicAttr: ({
           fieldValue, debouncedProductsFetch,
@@ -95,6 +106,7 @@ const FIELDS = {
         type: LabelField,
         label: 'react.stockMovement.expiry.label',
         defaultMessage: 'Expiry',
+        flexWidth: '2',
         attributes: {
           showValueTooltip: true,
         },
@@ -103,7 +115,7 @@ const FIELDS = {
         type: LabelField,
         label: 'react.stockMovement.quantityAvailable.label',
         defaultMessage: 'Qty Available',
-        fixedWidth: '150px',
+        flexWidth: '2',
         fieldKey: '',
         attributes: {
           // eslint-disable-next-line no-nested-ternary
@@ -122,7 +134,7 @@ const FIELDS = {
         type: TextField,
         label: 'react.stockMovement.quantitySelected.label',
         defaultMessage: 'Quantity selected',
-        fixedWidth: '140px',
+        flexWidth: '2',
         attributes: {
           type: 'number',
         },
@@ -195,7 +207,9 @@ class SubstitutionsModal extends Component {
       substitutionItems: _.map(substitutions, (sub, key) => ({
         'newProduct.id': sub.product.id,
         newQuantity: sub.quantitySelected,
-        reasonCode: values.reasonCode === 'SUBSTITUTION' ? values.reasonCode : `SUBSTITUTION${values.reasonCode ? ` (${values.reasonCode})` : ''}`,
+        reasonCode: values.reasonCode.value === 'SUBSTITUTION'
+          ? values.reasonCode.value
+          : `SUBSTITUTION${values.reasonCode.value ? ` (${values.reasonCode.value})` : ''}`,
         // Sort order of substitution items should be different for each of them so it is increased
         sortOrder: originalItem.sortOrder + key,
       })),

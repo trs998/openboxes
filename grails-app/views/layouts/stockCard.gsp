@@ -10,6 +10,34 @@
 
 	<title><g:pageProperty name="page.title"/></title>
 
+	<style>
+		.line {
+			display: flex;
+			min-width: 0;
+		}
+
+		.line-base {
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			overflow: hidden;
+			max-width: 50px;
+		}
+
+		.line-extension {
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			overflow: hidden;
+			max-width: 100px;
+		}
+
+		.recalled {
+			background-color: #ffcccb !important;
+		}
+
+		.restricted {
+			background-color: #fca714 !important;
+		}
+	</style>
 </head>
 <body>
 	<div class="body">
@@ -39,14 +67,16 @@
 			inventoryInstance:commandInstance?.inventory,
 			inventoryLevelInstance: commandInstance?.inventoryLevel,
 			totalQuantity: commandInstance?.totalQuantity]"/>
+                                                        totalQuantityAvailableToPromise: commandInstance?.totalQuantityAvailableToPromise]"/>
 		<div class="dialog">
             <div class="yui-gf">
                 <div class="yui-u first">
                     <g:render template="productDetails"
                         model="[productInstance:commandInstance?.product,
-                            inventoryInstance:commandInstance?.inventory,
-                            inventoryLevelInstance: commandInstance?.inventoryLevel,
-                            totalQuantity: commandInstance?.totalQuantity]"/>
+								inventoryInstance:commandInstance?.inventory,
+								inventoryLevelInstance: commandInstance?.inventoryLevel,
+								totalQuantity: commandInstance?.totalQuantity,
+								totalQuantityAvailableToPromise: commandInstance?.totalQuantityAvailableToPromise]"/>
                 </div>
                 <div class="yui-u">
 

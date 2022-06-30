@@ -1,4 +1,4 @@
-<%@ page import="org.pih.warehouse.core.Location" %>
+<%@ page import="org.pih.warehouse.core.Organization; org.pih.warehouse.core.Location" %>
 <html>
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
@@ -19,12 +19,14 @@
                         <img src="${resource(dir: 'images/icons/silk', file: 'application_side_list.png')}" />&nbsp;
                         <warehouse:message code="default.list.label" args="[warehouse.message(code:'locations.label').toLowerCase()]"/>
                     </g:link>
-                    <g:isUserAdmin>
-                        <g:link class="button" action="edit">
-                            <img src="${resource(dir: 'images/icons/silk', file: 'add.png')}" />&nbsp;
-                            <warehouse:message code="default.create.label"
-                             args="[warehouse.message(code: 'location.label').toLowerCase()]"/></g:link>
-                    </g:isUserAdmin>
+                    <g:link class="button" action="edit">
+                        <img src="${resource(dir: 'images/icons/silk', file: 'add.png')}" />&nbsp;
+                        <warehouse:message code="default.create.label"
+                         args="[warehouse.message(code: 'location.label').toLowerCase()]"/></g:link>
+                    <g:link controller="batch" action="downloadExcel" params="[type:'Location']" class="button">
+                        <img src="${resource(dir: 'images/icons/silk', file: 'page_excel.png')}" />&nbsp;
+                        <warehouse:message code="default.export.label" args="[g.message(code:'locations.label')]"/>
+                    </g:link>
                 </div>
 
                 <div class="yui-gf">
@@ -35,27 +37,32 @@
                             <g:form action="list" method="get">
                                 <div>
                                     <div class="filter-list-item">
-                                            <label class="clear"><warehouse:message code="location.name.label"/></label>
-                                            <g:textField name="q" value="${params.q }" class="text" style="width:100%"/>
+                                        <label><warehouse:message code="location.name.label"/></label>
+                                        <g:textField name="q" value="${params.q }" class="text" style="width:100%"/>
                                     </div>
                                     <div class="filter-list-item">
-                                            <label class="clear"><warehouse:message code="location.locationType.label"/></label>
-                                            <g:select name="locationType.id" from="${org.pih.warehouse.core.LocationType.list()}"
-                                                      optionKey="id" optionValue="${{format.metadata(obj:it)}}" class="chzn-select-deselect"
-                                                      value="${params?.locationType?.id}" noSelection="['null':'']" />
+                                        <label><warehouse:message code="organization.label"/></label>
+                                        <g:selectOrganization name="organization.id" class="chzn-select-deselect"
+                                                  value="${params?.organization?.id}" noSelection="['null':'']" />
                                     </div>
                                     <div class="filter-list-item">
+                                        <label><warehouse:message code="location.locationType.label"/></label>
+                                        <g:select name="locationType.id" from="${org.pih.warehouse.core.LocationType.list()}"
+                                                  optionKey="id" optionValue="${{format.metadata(obj:it)}}" class="chzn-select-deselect"
+                                                  value="${params?.locationType?.id?:defaultLocationType?.id}" noSelection="['null':'']" />
+                                    </div>
+                                    <div class="filter-list-item">
+                                        <label><warehouse:message code="location.locationGroup.label"/></label>
+                                        <g:select name="locationGroup.id" from="${org.pih.warehouse.core.LocationGroup.list()}"
+                                                  optionKey="id" optionValue="${{format.metadata(obj:it)}}" class="chzn-select-deselect"
+                                                  value="${params?.locationGroup?.id}" noSelection="['null':'']" />
+                                    </div>
 
-                                            <label class="clear"><warehouse:message code="location.locationGroup.label"/></label>
-                                            <g:select name="locationGroup.id" from="${org.pih.warehouse.core.LocationGroup.list()}"
-                                                      optionKey="id" optionValue="${{format.metadata(obj:it)}}" class="chzn-select-deselect"
-                                                      value="${params?.locationGroup?.id}" noSelection="['null':'']" />
-                                    </div>
-                                    <hr/>
-                                    <div class="filter-list-item center">
-                                            <button type="submit" class="button icon search">
-                                                ${warehouse.message(code: 'default.button.find.label')}
-                                            </button>
+                                    <div class="filter-list-item">
+                                        <button type="submit" class="button block">
+                                            <img class="middle" src="${createLinkTo(dir:'images/icons/silk',file:'find.png')}" alt="${warehouse.message(code: 'default.no.label') }" title="${warehouse.message(code: 'default.no.label') }"/>
+                                            ${warehouse.message(code: 'default.button.find.label')}
+                                        </button>
                                     </div>
                                 </div>
                             </g:form>
@@ -66,13 +73,15 @@
 
                         <div class="box">
                             <h2>
-                                ${warehouse.message(code: 'default.showing.message', args: [locationInstanceList?.size()?:0]) }
+                                ${warehouse.message(code: 'default.searchResults.label',
+                                        args: [locationInstanceTotal]) }
                             </h2>
                             <table>
                                 <thead>
                                     <tr style="height: 100px;">
                                         <th></th>
                                         <g:sortableColumn property="name" title="${warehouse.message(code: 'default.name.label')}" class="bottom"/>
+                                        <g:sortableColumn property="locationNumber" title="${warehouse.message(code: 'location.locationNumber.label')}" class="bottom"/>
                                         <g:sortableColumn property="locationType" title="${warehouse.message(code: 'location.locationType.label')}" class="bottom"/>
                                         <g:sortableColumn property="locationGroup" title="${warehouse.message(code: 'location.locationGroup.label')}" class="bottom"/>
                                         <th class="bottom"><span class="vertical-text"><warehouse:message code="warehouse.active.label" /></span></th>
@@ -92,6 +101,9 @@
                                             </td>
                                             <td class="middle">
                                                 <g:link action="edit" id="${locationInstance.id}">${fieldValue(bean: locationInstance, field: "name")}</g:link>
+                                            </td>
+                                            <td class="middle">
+                                                <g:link action="edit" id="${locationInstance.id}">${fieldValue(bean: locationInstance, field: "locationNumber")}</g:link>
                                             </td>
                                             <td class="left middle"><format:metadata obj="${locationInstance?.locationType}"/></td>
                                             <td class="left middle">${locationInstance?.locationGroup?:warehouse.message(code:'default.none.label')}</td>

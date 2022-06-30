@@ -10,7 +10,9 @@
 package org.pih.warehouse.core
 
 import grails.gorm.transactions.Transactional
+import grails.plugin.springcache.annotations.CacheFlush
 import grails.validation.ValidationException
+import org.pih.warehouse.inventory.InventoryLevel
 import org.pih.warehouse.inventory.Transaction
 import org.pih.warehouse.order.Order
 import org.pih.warehouse.requisition.Requisition
@@ -34,16 +36,17 @@ class LocationController {
     }
 
     def list() {
-
-        def locationsTotal = 0
-        def locationType = LocationType.get(params["locationType.id"])
+        def defaultLocationType = LocationType.findByLocationTypeCode(LocationTypeCode.DEPOT)
+        def locationType = params.containsKey("locationType.id")?LocationType.get(params["locationType.id"])?:null:defaultLocationType
         def locationGroup = LocationGroup.get(params["locationGroup.id"])
+        def organization = Organization.get(params["organization.id"])
 
         params.max = Math.min(params.max ? params.int('max') : 10, 100)
         params.offset = params.offset ? params.int("offset") : 0
-        def locations = locationService.getLocations(locationType, locationGroup, params.q, params.max, params.offset as int)
 
-        [locationInstanceList: locations, locationInstanceTotal: locations.totalCount]
+        def locations = locationService.getLocations(organization, locationType, locationGroup, params.q, params.max, params.offset as int)
+
+        [locationInstanceList: locations, locationInstanceTotal: locations.totalCount, defaultLocationType:defaultLocationType]
     }
 
     def show() {
@@ -66,6 +69,7 @@ class LocationController {
         }
     }
 
+    @CacheFlush(["megamenuCache"])
     def update() {
         def locationInstance = inventoryService.getLocation(params.id)
 
@@ -141,12 +145,23 @@ class LocationController {
         def locationInstance = Location.get(params.id)
         if (locationInstance) {
             try {
+                if (locationInstance.isZoneLocation() && Location.findAllByZone(locationInstance)) {
+                    flash.message = "${warehouse.message(code: 'location.zoneAssigned.message')}"
+                    redirect(action: "edit", id: params.id)
+                    return
+                }
+
+                def parentLocation = locationInstance.parentLocation
+                if (parentLocation) {
+                    parentLocation.removeFromLocations(locationInstance)
+                }
+
                 locationInstance.delete(flush: true)
 
                 flash.message = "${warehouse.message(code: 'default.deleted.message', args: [warehouse.message(code: 'location.label', default: 'Location'), params.id])}"
 
-                if (locationInstance.parentLocation) {
-                    redirect(action: "edit", id: locationInstance.parentLocation.id)
+                if (parentLocation) {
+                    redirect(action: "edit", id: parentLocation.id)
                 } else {
                     redirect(action: "list")
                 }
@@ -161,6 +176,7 @@ class LocationController {
         }
     }
 
+    @CacheFlush(["megamenuCache"])
     def resetSupportedActivities() {
         def location = Location.get(params.id)
         location.supportedActivities.clear()
@@ -305,13 +321,61 @@ class LocationController {
         if (!locationInstance) {
             render "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'location.label', default: 'Location'), params.id])}"
         } else {
-            def binLocations = Location.findAllByParentLocation(locationInstance)
+            def binLocations
+            if (locationInstance.isZoneLocation()) {
+                binLocations = Location.findAllByZone(locationInstance)
+            } else {
+                binLocations = locationService.getBinLocations(locationInstance)
+            }
             [locationInstance: locationInstance, binLocations: binLocations]
         }
     }
 
+    def showZoneLocations = {
+        def locationInstance = Location.get(params.id)
+        if (!locationInstance) {
+            render "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'location.label', default: 'Location'), params.id])}"
+        } else {
+            def zoneLocations = locationService.getZones(locationInstance)
+            [locationInstance: locationInstance, zoneLocations: zoneLocations]
+        }
+    }
 
+    def showForecastingConfiguration = {
+        def locationInstance = Location.get(params.id)
+        if (!locationInstance) {
+            render "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'location.label', default: 'Location'), params.id])}"
+        }
+
+        def inventoryLevelInstance = InventoryLevel.findByInventoryAndProductIsNull(locationInstance.inventory)
+
+        if (!inventoryLevelInstance) {
+            inventoryLevelInstance = new InventoryLevel(inventory: locationInstance.inventory)
+        }
+
+        [inventoryLevelInstance: inventoryLevelInstance]
     def importBinLocations() {
+
+    def updateForecastingConfiguration = {
+        def locationInstance = Location.get(params.id)
+        if (!locationInstance) {
+            render "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'location.label', default: 'Location'), params.id])}"
+        }
+
+        def inventoryLevelInstance = InventoryLevel.findByInventoryAndProductIsNull(locationInstance.inventory)
+
+        if (!inventoryLevelInstance) {
+            inventoryLevelInstance = new InventoryLevel(inventory: locationInstance.inventory)
+        }
+
+        inventoryLevelInstance.properties = params
+
+        inventoryLevelInstance.save()
+
+        redirect(action: "edit", id: locationInstance.id)
+    }
+
+    def importBinLocations = {
         try {
             MultipartFile multipartFile = request.getFile('fileContents')
             if (multipartFile.empty) {
@@ -321,37 +385,55 @@ class LocationController {
 
             if (locationService.importBinLocations(params.id, multipartFile.inputStream)) {
                 flash.message = "Successfully imported all bin locations."
-
             } else {
                 flash.message = "Failed to import bin locations due to an unknown error."
             }
+            redirect(action: "edit", id: params.id)
+
         } catch (Exception e) {
+            Location locationInstance = Location.read(params.id)
             log.error("Failed to import bin locations due to the following error: " + e.message, e)
-            flash.message = "Failed to import bin locations due to the following error: " + e.message
+            flash.message = e.message
+            render(view: "edit", model: [locationInstance: locationInstance])
+            return
         }
-        redirect(action: "edit", id: params.id)
     }
 
 
     def exportBinLocations() {
 
         Location location = Location.get(params.id)
+        Location zone = null
+
+        if (location?.isZoneLocation()) {
+            zone = location
+            location = location?.parentLocation
+        }
 
         if (!location) {
             throw new IllegalArgumentException("Must specify location")
         }
 
-        if (location.locations) {
+        def binLocations
+
+        if (zone) {
+            binLocations = location.getInternalLocationsByZone(zone)
+        } else {
+            binLocations = location.internalLocations
+        }
+
+        if (binLocations) {
             def date = new Date()
             response.setHeader("Content-disposition",
                     "attachment; filename=\"BinLocations-${location?.name}-${date.format("yyyyMMdd-hhmmss")}.csv\"")
             response.contentType = "text/csv"
-            def csvrows = location.locations.collect { binLocation ->
+            def csvrows = binLocations.collect { binLocation ->
                 return [
                         "id"            : binLocation.id ?: "",
                         "locationType"  : binLocation?.locationType?.locationTypeCode ?: "",
                         "locationNumber": binLocation?.locationNumber ?: "",
-                        "locationName"  : binLocation?.name ?: ""
+                        "locationName"  : binLocation?.name ?: "",
+                        "zoneName"      : binLocation?.zone?.name ?: ""
                 ]
             }
 

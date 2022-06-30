@@ -13,18 +13,25 @@ import grails.gorm.transactions.Transactional
 import groovy.sql.Sql
 import org.apache.commons.lang.StringEscapeUtils
 import org.apache.poi.hssf.usermodel.*
+import org.grails.plugins.csv.CSVWriter
+import org.grails.plugins.excelimport.ExcelImportUtils
+import org.pih.warehouse.core.Location
 import org.apache.poi.ss.usermodel.*
 import grails.plugins.csv.CSVWriter
 import org.grails.plugins.excelimport.ExpectedPropertyType
 import org.pih.warehouse.core.*
+import org.pih.warehouse.core.ProductPrice
+import org.pih.warehouse.core.UnitOfMeasure
+import org.pih.warehouse.core.UnitOfMeasureClass
+import org.pih.warehouse.core.UnitOfMeasureType
 import org.pih.warehouse.importer.ImportDataCommand
 import org.pih.warehouse.importer.InventoryLevelExcelImporter
 import org.pih.warehouse.inventory.Inventory
 import org.pih.warehouse.inventory.InventoryLevel
 import org.pih.warehouse.inventory.InventoryStatus
 import org.pih.warehouse.product.Category
-import org.pih.warehouse.product.ProductPackage
 import org.pih.warehouse.product.Product
+import org.pih.warehouse.product.ProductPackage
 
 import java.text.SimpleDateFormat
 
@@ -32,9 +39,11 @@ import java.text.SimpleDateFormat
 class DataService {
 
     def dataSource
-    def productService
     def sessionFactory
     def userService
+
+    def propertyInstanceMap = org.codehaus.groovy.grails.plugins.DomainClassGrailsPlugin.PROPERTY_INSTANCE_MAP
+
 
     private void cleanUpGorm() {
         def session = sessionFactory.currentSession
@@ -56,7 +65,6 @@ class DataService {
             try {
                 def startTime = System.currentTimeMillis()
                 log.info "Executing statement ${statement}"
-                sql.execute("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;")
                 sql.execute(statement)
                 log.info "Updated ${sql.updateCount} rows in " +  (System.currentTimeMillis() - startTime) + " ms"
                 sql.commit()
@@ -150,10 +158,29 @@ class DataService {
      */
     def importInventoryLevel(location, row, index) {
         log.info "Import inventory levels " + location + " row " + row + " index " + index
+        Product.withNewSession {
+
         def product = findProduct(row)
 
-        // Modify product attributes (name, manufacturer, manufacturerCode, vendor, vendorCode, unitOfMeasure, etc)
-        updateProduct(product, row)
+            // Modify product attributes (name, manufacturer, manufacturerCode, vendor, vendorCode, unitOfMeasure, etc)
+            updateProduct(product, row)
+
+            // Create inventory level for current location, include bin location
+            if (location.inventory) {
+                Location preferredBinLocation = null
+
+                if (row.preferredBinLocation) {
+                    preferredBinLocation = location.getBinLocations().find {
+                        it.name.equalsIgnoreCase(row.preferredBinLocation.trim())
+                    }
+
+                    if (!preferredBinLocation) {
+                        throw new RuntimeException("Bin location ${row.preferredBinLocation} was not found in current location")
+                    }
+                }
+
+                addInventoryLevelToProduct(product, location.inventory, preferredBinLocation, row)
+            }
 
         // Create inventory level for current location, include bin location
         if (location.inventory) {
@@ -179,14 +206,14 @@ class DataService {
      *
      * @param product
      * @param inventory
-     * @param binLocation
+     * @param preferredBinLocation
      * @param minQuantity
      * @param reorderQuantity
      * @param maxQuantity
      * @return
      */
-    def addInventoryLevelToProduct(Product product, Inventory inventory, String binLocation, Double minQuantity, Double reorderQuantity, Double maxQuantity, Boolean preferredForReorder) {
-        findOrCreateInventoryLevel(product, inventory, binLocation, minQuantity, reorderQuantity, maxQuantity, preferredForReorder)
+    def addInventoryLevelToProduct(Product product, Inventory inventory, Location preferredBinLocation, Map row) {
+        findOrCreateInventoryLevel(product, inventory, preferredBinLocation, row)
     }
 
     /**
@@ -255,15 +282,15 @@ class DataService {
      *
      * @param product
      * @param inventory
-     * @param binLocation
+     * @param preferredBinLocation
      * @param minQuantity
      * @param reorderQuantity
      * @param maxQuantity
      * @return
      */
-    def findOrCreateInventoryLevel(Product product, Inventory inventory, String binLocation, Double minQuantity, Double reorderQuantity, Double maxQuantity, Boolean preferredForReorder) {
+    def findOrCreateInventoryLevel(Product product, Inventory inventory, Location preferredBinLocation, Map row) {
 
-        log.info "Product ${product.productCode} inventory ${inventory} preferred ${preferredForReorder}"
+        log.info "Product ${product.productCode} inventory ${inventory} preferred ${row.preferredForReorder}"
 
         def inventoryLevel = InventoryLevel.findByProductAndInventory(product, inventory)
         if (!inventoryLevel) {
@@ -274,11 +301,13 @@ class DataService {
         }
 
         inventoryLevel.status = InventoryStatus.SUPPORTED
-        inventoryLevel.binLocation = binLocation
-        inventoryLevel.minQuantity = minQuantity
-        inventoryLevel.reorderQuantity = reorderQuantity
-        inventoryLevel.maxQuantity = maxQuantity
-        inventoryLevel.preferred = Boolean.valueOf(preferredForReorder)
+        inventoryLevel.preferredBinLocation = preferredBinLocation
+        inventoryLevel.minQuantity = row.minQuantity
+        inventoryLevel.reorderQuantity = row.reorderQuantity
+        inventoryLevel.maxQuantity = row.maxQuantity
+        inventoryLevel.preferred = Boolean.valueOf(row.preferredForReorder)
+        inventoryLevel.expectedLeadTimeDays = row.expectedLeadTimeDays
+        inventoryLevel.replenishmentPeriodDays = row.replenishmentPeriodDays
 
         return inventoryLevel
     }
@@ -312,7 +341,14 @@ class DataService {
         productPackage.product = product
         productPackage.gtin = ""
         productPackage.uom = unitOfMeasure
-        productPackage.price = price ?: 0.0
+        if (!productPackage.productPrice && price) {
+            ProductPrice productPrice = new ProductPrice()
+            productPrice.price = price
+            productPrice.save()
+            productPackage.productPrice = productPrice
+        } else if (productPackage.productPrice && price) {
+            productPackage.productPrice.price = price
+        }
         productPackage.quantity = quantity ?: 1
         productPackage = productPackage.merge()
 
@@ -350,11 +386,6 @@ class DataService {
         product = product.merge()
         log.info "findOrCreateProduct: ${product}"
         return product
-    }
-
-
-    def findTags(tagNames) {
-        return Tag.findAll("from Tag as t where t.tag in (:tagNames)", [tagNames: tagNames])
     }
 
     def findProduct(row) {
@@ -434,50 +465,6 @@ class DataService {
             throw e
         }
         return 0.0
-    }
-
-    /**
-     * FIXME This should be a method on product.
-     *
-     * @param product
-     * @param categoryName
-     * @return
-     */
-    def changeCategory(product, categoryName) {
-        def category = productService.findOrCreateCategory(categoryName)
-        if (product.category != category && category) {
-            product.category = category
-        }
-    }
-
-    /**
-     * FIXME This should be a method on product.
-     *
-     * @param product
-     * @param tags
-     * @return
-     */
-    def addTagsToProduct(product, tagNames) {
-        def tags = tagNames?.split(",")
-        if (tags) {
-            tags.each { tagName ->
-                if (tagName) {
-                    addTagToProduct(product, tagName)
-                }
-            }
-        }
-    }
-
-    def addTagToProduct(product, tagName) {
-        // Check if the product already has the given tag
-        def alreadyHasTag = product.tags.find { it.tag == tagName }
-        if (!alreadyHasTag) {
-            def foundTag = Tag.executeQuery("select distinct t from Tag t where t.tag = :tagName", [tagName: tagName, max: 1])
-            if (foundTag) {
-                product.addToTags(foundTag[0])
-                product.merge()
-            }
-        }
     }
 
     /**
@@ -768,9 +755,22 @@ class DataService {
 
     def transformObject(Object object, Map includeFields) {
         Map properties = [:]
-        includeFields.each { fieldName, property ->
-            def value = property.tokenize('.').inject(object) { v, k -> v?."$k" }
-            properties[fieldName] = value ?: ""
+        includeFields.each { fieldName, element ->
+            def value = null
+            if (element instanceof LinkedHashMap) {
+                value = element.property.tokenize('.').inject(object) { v, k -> v?."$k" }
+                if (element.defaultValue && element.dateFormat && !value) {
+                    value = element.defaultValue.format(element.dateFormat)
+                } else if (element.dateFormat && value) {
+                    value = value.format(element.dateFormat)
+                } else if (element.defaultValue && !value) {
+                    value = element.defaultValue
+                }
+                properties[fieldName] = value ?: ""
+            } else {
+                value = element.tokenize('.').inject(object) { v, k -> v?."$k" }
+                properties[fieldName] = value ?: ""
+            }
         }
         return properties
     }
@@ -798,73 +798,6 @@ class DataService {
             }
         }
         return sw.toString()
-    }
-
-    /**
-     * Utility method to retrieve basic properties for an upload file.
-     *
-     * @param uploadFile
-     * @return
-     */
-    def getFileProperties(uploadFile) {
-        def fileProps = [:]
-        println "content type:        " + uploadFile.contentType
-        switch (uploadFile.contentType) {
-            case "text/csv":
-                fileProps.type = "csv"
-                break
-            case "application/vnd.ms-excel":
-                fileProps.type = "xls"
-                break
-            case "application/vnd.oasis.opendocument.spreadsheet":
-                fileProps.type = "ods"
-                break
-            case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-                fileProps.type = "xlsx"
-                break
-            default:
-                fileProps.type = ""
-        }
-        fileProps.size = uploadFile.size
-        return fileProps
-    }
-
-    /**
-     * Converts an XLS file to a hash map.
-     *
-     * @param inputStream
-     * @param columTypes
-     * @param ignoredRows
-     * @return
-     */
-    def xlsToSimpleHash(inputStream, columTypes, ignoredRows) {
-        Workbook wb = new HSSFWorkbook(inputStream)
-        //so this is just going to get sheet 1 .. who uses more than 1?
-        //def numOfSheets = wb.getNumberOfSheets()
-        Sheet sheet = wb.getSheetAt(0)
-        def xlsData = [:]
-        sheet.iterator().eachWithIndex { row, rowNum ->
-            if (!ignoredRows.contains(rowNum)) {
-                xlsData[rowNum] = [:]
-                row.iterator().eachWithIndex { col, colNum ->
-                    switch (columTypes[colNum]) {
-                    //case ["number","num","int","integer",0, 'inList']
-                        case "number":
-                            xlsData[rowNum][colNum] = col.getNumericCellValue()
-                            break
-                        case "string":
-                            xlsData[rowNum][colNum] = col.getStringCellValue()
-                            break
-                        case "date":
-                            xlsData[rowNum][colNum] = col.getDateCellValue()
-                            break
-                        default:
-                            xlsData[rowNum][colNum] = ''
-                    }
-                }
-            } else log.debug "ignoring row ${rowNum}"
-        }
-        return xlsData
     }
 
 }

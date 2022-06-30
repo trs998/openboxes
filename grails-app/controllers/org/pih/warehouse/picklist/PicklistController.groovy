@@ -13,6 +13,7 @@ import grails.converters.JSON
 import grails.gorm.transactions.Transactional
 import grails.plugins.rendering.pdf.PdfRenderingService
 import org.pih.warehouse.core.Location
+import org.pih.warehouse.order.Order
 import org.pih.warehouse.requisition.Requisition
 
 @Transactional
@@ -40,6 +41,14 @@ class PicklistController {
         [requisition: requisition, picklist: picklist, location: location, sorted: params.sorted]
     }
 
+    // Order based picklist print
+    def returnPrint = {
+        def order = Order.get(params.id)
+        def picklist = Picklist.findByOrder(order)
+        def location = Location.get(session.warehouse.id)
+        [order: order, picklist: picklist, location: location, sorted: params.sorted]
+    }
+
     def renderPdf() {
         def requisition = Requisition.get(params.id)
         def picklist = Picklist.findByRequisition(requisition)
@@ -50,6 +59,18 @@ class PicklistController {
                 //locale:locale,
                 model: [requisition: requisition, picklist: picklist, location: location, sorted: params.sorted],
                 filename: "Picklist - ${requisition.requestNumber}"
+        )
+    }
+
+    // Order based picklist pdf
+    def renderReturnPdf = {
+        def order = Order.get(params.id)
+        def picklist = Picklist.findByOrder(order)
+        def location = Location.get(session.warehouse.id)
+        renderPdf(
+            template: "/picklist/returnPrint",
+            model: [order: order, picklist: picklist, location: location, sorted: params.sorted],
+            filename: "Return Picklist - ${order.orderNumber}"
         )
     }
 

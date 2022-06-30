@@ -14,7 +14,9 @@ import grails.core.GrailsApplication
 import grails.gorm.transactions.Transactional
 import grails.util.Environment
 import org.hibernate.ObjectNotFoundException
+import org.pih.warehouse.core.ActivityCode
 import org.pih.warehouse.core.Location
+import org.pih.warehouse.core.RoleType
 import org.pih.warehouse.core.User
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.requisition.RequisitionType
@@ -25,8 +27,8 @@ import java.text.SimpleDateFormat
 @Transactional
 class ApiController {
 
-    def dataSource
     def userService
+    def helpScoutService
     def localizationService
     GrailsApplication grailsApplication
     def megamenuService
@@ -64,10 +66,21 @@ class ApiController {
         render([status: 200, text: "Current language is ${locale}"])
     }
 
-    def getMenuConfig() {
-        Map menuConfig = grailsApplication.config.openboxes.megamenu
-        User user = User.get(session?.user?.id)
+    def getMenuConfig = {
         Location location = Location.get(session.warehouse?.id)
+
+        if (!location.supports(ActivityCode.MANAGE_INVENTORY) && location.supports(ActivityCode.SUBMIT_REQUEST)) {
+            render([data: [menuConfig: []]] as JSON)
+            return
+        }
+
+    def getMenuConfig() {
+        Map menuConfig = grailsApplication.config.openboxes.megamenu;
+        User user = User.get(session?.user?.id)
+
+        if (userService.hasHighestRole(user, session?.warehouse?.id, RoleType.ROLE_AUTHENTICATED)) {
+            menuConfig = grailsApplication.config.openboxes.requestorMegamenu;
+        }
         List translatedMenu = megamenuService.buildAndTranslateMenu(menuConfig, user, location)
         render([data: [menuConfig: translatedMenu]] as JSON)
     }
@@ -131,7 +144,6 @@ class ApiController {
         def hostname = session.hostname ?: "Unknown"
         def timezone = session?.timezone?.ID
         def isPaginated = grailsApplication.config.openboxes.api.pagination.enabled
-        def tablero = grailsApplication.config.openboxes.tablero
         DateFormat dateFormat = new SimpleDateFormat("MM/DD/YYYY");
         String minValue = grailsApplication.getConfig().getProperty('openboxes.expirationDate.minValue')
         String minimumExpirationDate = dateFormat.format(new Date(minValue))
@@ -144,6 +156,8 @@ class ApiController {
             [code: it, name: name]
         }
         String currencyCode = grailsApplication.config.openboxes.locale.defaultCurrencyCode
+        String localizedHelpScoutKey = helpScoutService.localizedHelpScoutKey
+        boolean isHelpScoutEnabled = grailsApplication.config.openboxes.helpscout.widget.enabled
         render([
                 data: [
                         user                 : user,
@@ -161,18 +175,19 @@ class ApiController {
                         ipAddress            : ipAddress,
                         hostname             : hostname,
                         timezone             : timezone,
-                        tablero              : tablero,
-                        minimumExpirationDate: minimumExpirationDate,
-                        activeLanguage       : locale.language,
-                        isPaginated          : isPaginated,
-                        logoLabel            : logoLabel,
-                        menuItems            : menuItems,
-                        highestRole          : highestRole,
-                        pageSize             : pageSize,
-                        logoUrl              : logoUrl,
-                        supportedLocales     : supportedLocales,
-                        currencyCode         : currencyCode,
-                ],
+                minimumExpirationDate: minimumExpirationDate,
+                activeLanguage       : locale.language,
+                isPaginated          : isPaginated,
+                logoLabel            : logoLabel,
+                menuItems            : menuItems,
+                highestRole          : highestRole,
+                pageSize             : pageSize,
+                logoUrl              : logoUrl,
+                supportedLocales     : supportedLocales,
+                currencyCode         : currencyCode,
+                localizedHelpScoutKey: localizedHelpScoutKey,
+                isHelpScoutEnabled   : isHelpScoutEnabled,
+            ],
         ] as JSON)
     }
 
@@ -212,5 +227,17 @@ class ApiController {
             requestTypes << [id: id, name: name]
         }
         render([data: requestTypes] as JSON)
+    }
+
+    def getSupportLinks = {
+        def supportLinks = grailsApplication.config.openboxes.supportLinks
+
+        render([data: supportLinks] as JSON)
+    }
+
+    def getResettingInstanceCommand = {
+        def resettingInstanceCommand = grailsApplication.config.openboxes.resettingInstance.command
+
+        render([data: resettingInstanceCommand] as JSON)
     }
 }

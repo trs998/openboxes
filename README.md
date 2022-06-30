@@ -51,17 +51,34 @@ By using this software in any fashion, you are agreeing to be bound by
 the terms of this license.
 You must not remove this notice, or any other, from this software.
 
+## Deploy to your Azure VPC
+
+*Deploy to Azure* button will bring you to Azure portal, where after filling a few of the properties you can get your OpenBoxes environment in a matter of minutes. In the Azure setup screen, look at each property's tooltip description to understand its purpose.
+
+For more information and step-by-step instructions go to:
+https://openboxes.atlassian.net/wiki/spaces/OBW/pages/1719435265/Push-button+deployment
+
+*Deploy to Azure* uses the ARM template defined in [openboxes-devops](https://github.com/openboxes/openboxes-devops/tree/master/arm-template) repository.
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fopenboxes%2Fopenboxes-devops%2Fmaster%2Farm-template%2Fopenboxes-arm.json)
+
+*Visualize* will open armviz.io to display graph of all of the Azure resources, which the deployment will provision.
+
+[![Visualize](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/1-CONTRIBUTION-GUIDE/images/visualizebutton.svg?sanitize=true)](http://armviz.io/#/?load=https%3A%2F%2Fraw.githubusercontent.com%2Fopenboxes%2Fopenboxes-devops%2Fmaster%2Farm-template%2Fopenboxes-arm.json)
+
+
 ## Setup development environment
 
 ### Install Dependencies
 
 #### Required
-* Java 7 (must install Java 7)
-* MySQL 5.7
+* [Java 7 (must install Java 7)](https://www.azul.com/downloads/?version=java-7-lts&package=jdk)
+* [MySQL 5.7](https://downloads.mysql.com/archives/community/)
+  * Mac users: 5.7.31 is the latest 5.7.x with a pre-built installer and works fine
 * [SDK Man](https://sdkman.io/install)
 * [Grails 1.3.9](https://grails.org/download.html)
-* NPM 6.13.7
-* Node 13.11.0
+* NPM 6.14.6
+* Node 14+
 
 #### Optional
 * [IntelliJ IDEA 14.1](https://www.jetbrains.com/idea/download/)
@@ -79,7 +96,7 @@ Install required dependencies above
 Check that you have SDK Man installed properly (otherwise follow instructions on the skdman install page).
 ```
 $ sdk version
-SDKMAN 3.1.0
+SDKMAN 5.13.2
 ```
 
 Install Grails 1.3.9
@@ -199,7 +216,14 @@ To run new frontend (React) tests type:
 ```
 npm test
 ```
-#### 14. React documentation
+
+#### 14. Grails tests
+To run Grails tests type:
+```
+grails test-app
+```
+
+#### 15. React documentation
 Start a style guide dev server:
 ```
 npm run styleguide

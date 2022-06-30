@@ -1,10 +1,12 @@
 import React from 'react';
-import { setActiveLanguage, getLanguages } from 'react-localize-redux';
-import { connect } from 'react-redux';
+
 import _ from 'lodash';
 import PropTypes from 'prop-types';
-import Translate from '../../utils/Translate';
-import { changeCurrentLocale } from '../../actions';
+import { getLanguages, setActiveLanguage } from 'react-localize-redux';
+import { connect } from 'react-redux';
+
+import { changeCurrentLocale } from 'actions';
+import Translate from 'utils/Translate';
 
 
 const Footer = ({
@@ -15,7 +17,7 @@ const Footer = ({
 }) => (
   <div className="border-top align-self-end text-center py-2 w-100 footer">
     <div className="d-flex flex-row justify-content-center m-2 flex-wrap">
-      <div className="mx-3">© {(new Date().getFullYear())} <a href="https://openboxes.com"><Translate id="react.default.poweredBy.label " defaultMessage="Powered by OpenBoxes" /></a></div> {'|'}
+      <div className="mx-3">© {(new Date().getFullYear())} <a href="https://openboxes.com"><Translate id="react.default.poweredBy.label" defaultMessage="Powered by OpenBoxes" /></a></div> {'|'}
       <div className="mx-3"><Translate id="react.default.grailsVersion.label " defaultMessage="Grails Version" />: <b>{grailsVersion}</b></div>{'|'}
       <div className="mx-3"><Translate id="react.default.version.label " defaultMessage="Application version" />: <b>{appVersion}</b></div> {'|'}
       <div className="mx-3"><Translate id="react.default.branch.label " defaultMessage="Branch" />: <b>{branchName}</b> </div> {'|'}

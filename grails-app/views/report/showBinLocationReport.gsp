@@ -94,10 +94,12 @@
                                 <th class="center"><g:message code="default.status.label"/></th>
                                 <th class="center"><g:message code="product.productCode.label"/></th>
                                 <th class="center"><g:message code="product.label"/></th>
+                                <th class="center"><g:message code="location.zone.label"/></th>
                                 <th class="center"><g:message code="location.binLocation.label"/></th>
                                 <th class="center"><g:message code="inventoryItem.lotNumber.label"/></th>
                                 <th class="center"><g:message code="inventoryItem.expirationDate.label"/></th>
-                                <th class="center"><g:message code="default.quantity.label"/></th>
+                                <th class="center"><g:message code="default.quantityOnHand.label"/></th>
+                                <th class="center"><g:message code="default.quantityAvailable.label"/></th>
                                 <th class="center"><g:message code="default.uom.label"/></th>
                                 <th class="center"><g:message code="product.unitCost.label"/></th>
                                 <th class="center"><g:message code="product.totalValue.label"/></th>
@@ -178,10 +180,12 @@
                 { "mData": "status", "sWidth": "1%" },
                 { "mData": "productCode", "sWidth": "1%" },
                 { "mData": "productName", "sWidth": "20%" },
-                { "mData": "binLocation", "sWidth": "5%"  },
+                { "mData": "zone", "sWidth": "4%"  },
+                { "mData": "binLocation", "sWidth": "4%"  },
                 { "mData": "lotNumber", "sWidth": "5%"  },
-                { "mData": "expirationDate", "sWidth": "5%"  },
-                { "mData": "quantity", "sWidth": "5%"  },
+                { "mData": "expirationDate", "sWidth": "4%"  },
+                { "mData": "quantity", "sWidth": "4%"  },
+                { "mData": "quantityAvailableToPromise", "sWidth": "4%"  },
                 { "mData": "unitOfMeasure", "sWidth": "1%" },
                 { "mData": "unitCost", "sWidth": "1%" },
                 { "mData": "totalValue", "sWidth": "1%", "sType":"currency" }
@@ -193,7 +197,12 @@
                 $('td:eq(1)', nRow).html('<a href="${request.contextPath}/inventoryItem/showStockCard/' + aData["id"] + '">' + aData["productCode"] + '</a>');
                 $('td:eq(2)', nRow).html('<a href="${request.contextPath}/inventoryItem/showStockCard/' + aData["id"] + '">' + aData["productName"] + ' ' +
                   renderHandlingIcons(aData) +  '</a>');
-                return nRow;
+                if (aData["lotStatus"] === "RECALLED") {
+                  $(nRow).removeClass().css('backgroundColor', '#ffcccb').attr("title", "This lot has been recalled");
+                }
+                if (aData["isOnHold"]) {
+                  $(nRow).removeClass().css('backgroundColor', '#fca714').attr("title", "This bin has been restricted");
+                }
             }
 
         });

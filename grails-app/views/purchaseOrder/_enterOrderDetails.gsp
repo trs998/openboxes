@@ -1,3 +1,5 @@
+<%@ page import="org.pih.warehouse.core.ActivityCode" %>
+<%@ page import="org.pih.warehouse.order.OrderType" %>
 <%@ page import="org.pih.warehouse.order.OrderTypeCode" %>
 
 <html>
@@ -29,7 +31,7 @@
 			</g:hasErrors>
 		</g:each>
 		<g:form action="saveOrderDetails" method="post">
-            <g:hiddenField name="orderTypeCode" value="${org.pih.warehouse.order.OrderTypeCode.PURCHASE_ORDER}"/>
+            <g:hiddenField name="orderType.id" value="${OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name()).id}"/>
             <g:hiddenField id="orderId" name="order.id" value="${order?.id }"></g:hiddenField>
 			<div class="dialog">
                 <g:render template="/order/summary" model="[orderInstance:order,currentState:'editOrder']"/>
@@ -72,31 +74,25 @@
                                     <label for="destination.id"><warehouse:message code="order.destination.label"/></label>
                                 </td>
                                 <td class='value ${hasErrors(bean:order,field:'destination','errors')}'>
-                                    <g:if test="${order?.destination }">
+                                    <g:if test="${!isCentralPurchasingEnabled}">
                                         ${order?.destination?.name }
                                         <g:hiddenField name="destination.id" value="${order?.destination?.id}"/>
                                     </g:if>
                                     <g:else>
-                                        ${session?.warehouse?.name }
-                                        <g:hiddenField name="destination.id" value="${session?.warehouse?.id}"/>
+                                        <g:selectLocation class="chzn-select-deselect filter"
+                                                          id="destination.id"
+                                                          name="destination.id"
+                                                          activityCode="${ActivityCode.RECEIVE_STOCK}"
+                                                          noSelection="['':'']"
+                                                          value="${order?.destination?.id}"/>
                                     </g:else>
                                 </td>
                             </tr>
                             <tr class='prop'>
                                 <td class='name middle'><label><warehouse:message code="order.destinationParty.label"/></label></td>
-                                <td valign='top'
-                                    class='value ${hasErrors(bean:order,field:'destinationParty','errors')}'>
-
-                                    <g:if test="${order.id}">
-                                        ${order.destinationParty.name} (${order.destinationParty?.code})
-                                    </g:if>
-                                    <g:else>
-                                        <g:selectOrganization name="destinationParty.id"
-                                                              id="destinationParty.id" value="${order?.destinationParty?.id}"
-                                                              roleTypes="[org.pih.warehouse.core.RoleType.ROLE_BUYER]"
-                                                              noSelection="['':'']"
-                                                              class="chzn-select-deselect" />
-                                    </g:else>
+                                <td valign='top' class='value ${hasErrors(bean:order,field:'destinationParty','errors')}'>
+                                    ${order.destinationParty.name} (${order.destinationParty?.code})
+                                    <g:hiddenField name="destinationParty.id" value="${order?.destinationParty?.id}"/>
                                 </td>
                             </tr>
                             <tr class='prop'>

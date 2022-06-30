@@ -96,19 +96,22 @@ class AdminController {
                 withForm {
                     MultipartFile multipartFile = request.getFile('file')
                     if (!multipartFile.empty) {
-                        def emailMessageMap = [
-                                from          : session?.user?.email,
-                                to            : params.list("to"),
-                                cc            : [],
-                                bcc           : [],
-                                subject       : params["subject"],
-                                body          : params["message"],
-                                attachment    : multipartFile?.bytes,
-                                attachmentName: multipartFile?.originalFilename,
-                                mimeType      : multipartFile?.contentType
-                        ]
-                        mailService.sendHtmlMailWithAttachment(emailMessageMap)
-                        flash.message = "Multipart email with subject ${params.subject} and attachment ${multipartFile.originalFilename} has been sent to ${params.to}"
+                        def success = mailService.sendHtmlMailWithAttachment(
+                                session?.user,
+                                params.list("to"),
+                                null,
+                                params["subject"],
+                                params["message"],
+                                multipartFile?.bytes,
+                                multipartFile?.originalFilename,
+                                multipartFile?.contentType
+                        )
+
+                        if (success) {
+                            flash.message = "Multipart email with subject ${params.subject} and attachment ${multipartFile.originalFilename} has been sent to ${params.to}"
+                        } else {
+                            flash.message = "Could not send email with subject ${params.subject} and attachment ${multipartFile.originalFilename} to ${params.to}"
+                        }
                     } else {
                         if (params.includesHtml) {
                             mailService.sendHtmlMail(params.subject, params.message, params.to)
@@ -222,6 +225,12 @@ class AdminController {
         backup.bytes = source.bytes
 
         redirect(action: "showSettings")
+    }
+
+    def triggerStockAlerts = {
+        SendStockAlertsJob.triggerNow([:])
+        flash.message = "Triggered send stock alerts job in background"
+        redirect(controller: "admin", action: "showSettings")
     }
 }
 

@@ -11,7 +11,6 @@ package org.pih.warehouse.api
 
 import grails.converters.JSON
 import grails.gorm.transactions.Transactional
-import grails.plugins.rendering.pdf.PdfRenderingService
 import org.grails.web.json.JSONObject
 import org.pih.warehouse.core.User
 import org.pih.warehouse.inventory.InventoryLevel
@@ -24,10 +23,9 @@ import org.pih.warehouse.order.Order
 @Transactional
 class PutawayApiController {
 
-    def putawayService
-    def inventoryService
     def identifierService
-    PdfRenderingService pdfRenderingService
+    def productAvailabilityService
+    def putawayService
 
     def list() {
         String locationId = params?.location?.id ?: session?.warehouse?.id
@@ -49,9 +47,9 @@ class PutawayApiController {
         putaway.sortBy = params.sortBy
         putaway.putawayItems.each { PutawayItem putawayItem ->
             putawayItem.availableItems =
-                    inventoryService.getAvailableBinLocations(putawayItem.currentFacility, putawayItem.product)
+                    productAvailabilityService.getAllAvailableBinLocations(putawayItem.currentFacility, putawayItem.product)
             putawayItem.inventoryLevel = InventoryLevel.findByProductAndInventory(putawayItem.product, putaway.origin.inventory)
-            putawayItem.quantityAvailable = inventoryService.getQuantity(putawayItem.currentFacility.inventory, putawayItem.currentLocation, putawayItem.inventoryItem)
+            putawayItem.quantityAvailable = productAvailabilityService.getQuantityOnHandInBinLocation(putawayItem.inventoryItem, putawayItem.currentLocation)
         }
         render([data: putaway?.toJson()] as JSON)
     }
@@ -67,25 +65,25 @@ class PutawayApiController {
 
         User currentUser = User.get(session.user.id)
 
+        Putaway putaway = new Putaway()
         bindPutawayData(putaway, currentUser, currentLocation, jsonObject)
         Order order
 
         // Putaway stock
         if (putaway?.putawayStatus?.equals(PutawayStatus.COMPLETED)) {
             order = putawayService.completePutaway(putaway)
+            putaway = Putaway.createFromOrder(order)
         } else {
             order = putawayService.savePutaway(putaway)
+            putaway = Putaway.createFromOrder(order)
+            putaway.sortBy = jsonObject.sortBy
+            putaway?.putawayItems?.each { PutawayItem putawayItem ->
+                putawayItem.availableItems =
+                        productAvailabilityService.getAllAvailableBinLocations(putawayItem.currentFacility, putawayItem.product)
+                putawayItem.inventoryLevel = InventoryLevel.findByProductAndInventory(putawayItem.product, putaway.origin.inventory)
+                putawayItem.quantityAvailable = productAvailabilityService.getQuantityOnHandInBinLocation(putawayItem.inventoryItem, putawayItem.currentLocation)
+            }
         }
-
-        putaway = Putaway.createFromOrder(order)
-        putaway.sortBy = jsonObject.sortBy
-        putaway?.putawayItems?.each { PutawayItem putawayItem ->
-            putawayItem.availableItems =
-                    inventoryService.getAvailableBinLocations(putawayItem.currentFacility, putawayItem.product)
-            putawayItem.inventoryLevel = InventoryLevel.findByProductAndInventory(putawayItem.product, putaway.origin.inventory)
-            putawayItem.quantityAvailable = inventoryService.getQuantity(putawayItem.currentFacility.inventory, putawayItem.currentLocation, putawayItem.inventoryItem)
-        }
-
         render([data: putaway?.toJson()] as JSON)
     }
 

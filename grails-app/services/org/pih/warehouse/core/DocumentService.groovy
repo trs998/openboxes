@@ -15,6 +15,7 @@ import org.apache.poi.hssf.usermodel.HSSFWorkbook
 import org.apache.poi.ss.usermodel.*
 import org.apache.poi.ss.util.CellRangeAddress
 import grails.util.Holders
+import org.hibernate.criterion.CriteriaSpecification
 import org.docx4j.TextUtils
 import org.docx4j.XmlUtils
 import org.docx4j.convert.out.pdf.PdfConversion
@@ -26,6 +27,10 @@ import org.docx4j.openpackaging.parts.relationships.Namespaces
 import org.docx4j.wml.*
 //import org.groovydev.SimpleImageBuilder
 import org.pih.warehouse.api.Stocklist
+import org.pih.warehouse.order.Order
+import org.pih.warehouse.order.OrderType
+import org.pih.warehouse.order.OrderTypeCode
+import org.pih.warehouse.requisition.RequisitionItem
 import org.pih.warehouse.requisition.RequisitionItemSortByCode
 import org.pih.warehouse.requisition.RequisitionItem
 import org.pih.warehouse.shipping.ReferenceNumber
@@ -1544,5 +1549,38 @@ class DocumentService {
         }
     }
 
+    List<Document> getAllDocumentsBySupplierOrganization(Organization supplierOrganization) {
+        def documents = Order.createCriteria().list {
+                resultTransformer(CriteriaSpecification.ALIAS_TO_ENTITY_MAP)
+                projections {
+                    property("id", "orderId")
+                    property("orderNumber", "orderNumber")
+                    property("name", "orderDescription")
+                    origin {
+                        property("name", "origin")
+                    }
+                    destination {
+                        property("name", "destination")
+                    }
+                    documents {
+                        property("id", "documentId")
+                        property("documentNumber", "documentNumber")
+                        documentType {
+                            property("name", "documentType")
+                        }
+                        property("name", "documentName")
+                        property("contentType", "fileType")
+                        property("fileUri", "fileUri")
+                    }
+                }
+                eq("originParty", supplierOrganization)
+                eq("orderType", OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name()))
+                documents {
+                    isNotNull("id")
+                }
+            }
+
+        return documents
+    }
 
 }

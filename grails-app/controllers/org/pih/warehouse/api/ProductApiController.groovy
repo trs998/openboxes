@@ -33,7 +33,7 @@ class ProductApiController extends BaseDomainApiController {
         def data = [:]
         data.location = location
         data.product = product
-        data.demand = forecastingService.getDemand(location, product)
+        data.demand = forecastingService.getDemand(location, null, product)
 
         render([data: data] as JSON)
     }
@@ -62,17 +62,18 @@ class ProductApiController extends BaseDomainApiController {
     def list() {
 
         def minLength = grailsApplication.config.openboxes.typeahead.minLength
-        def location = Location.get(session.warehouse.id)
-        def availableItems
+
         if (params.name && params.name.size() < minLength) {
             render([data: []])
             return
         }
 
         String[] terms = params?.name?.split(",| ")?.findAll { it }
-        def products = productService.searchProducts(terms, [])
+        def products
         if(params.availableItems) {
-            availableItems = inventoryService.getAvailableBinLocations(location, products).groupBy { it.inventoryItem?.product?.productCode }
+            products = productService.searchProducts(terms, [])
+            def location = Location.get(session.warehouse.id)
+            def availableItems = productAvailabilityService.getAvailableBinLocations(location, products).groupBy { it.inventoryItem?.product?.productCode }
             products = []
             availableItems.each { k, v ->
                 products += [
@@ -87,8 +88,11 @@ class ProductApiController extends BaseDomainApiController {
                     color: v[0].inventoryItem.product.color
                 ]
             }
+
+            products = products.unique()
+        } else {
+            products = productService.searchProductDtos(terms)
         }
-        products = products.unique()
 
         render([data: products] as JSON)
     }
@@ -207,7 +211,17 @@ class ProductApiController extends BaseDomainApiController {
         Product product = Product.get(params.id)
         Location location = Location.get(params.locationId)
         def quantityOnHand = productAvailabilityService.getQuantityOnHand(product, location)
-        def demand = forecastingService.getDemand(location, product)
+        def quantityAvailable = inventoryService.getQuantityAvailableToPromise(product, location)
+        def demand = forecastingService.getDemand(location, null, product)
+        render([monthlyDemand: demand.monthlyDemand, quantityOnHand: quantityOnHand, quantityAvailable: quantityAvailable] as JSON)
+    }
+
+    def productDemand = {
+        Product product = Product.get(params.id)
+        Location origin = Location.get(params.originId)
+        Location destination = Location.get(params.destinationId)
+        def quantityOnHand = productAvailabilityService.getQuantityOnHand(product, destination)
+        def demand = forecastingService.getDemand(origin, destination, product)
         render([monthlyDemand: demand.monthlyDemand, quantityOnHand: quantityOnHand] as JSON)
     }
 

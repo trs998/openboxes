@@ -15,6 +15,7 @@ import grails.core.GrailsApplication
 import grails.gorm.transactions.Transactional
 import grails.plugins.csv.CSVWriter
 import org.pih.warehouse.api.StockMovement
+import org.pih.warehouse.api.StockMovementDirection
 import org.pih.warehouse.api.StockMovementItem
 import org.pih.warehouse.api.StockMovementType
 import org.pih.warehouse.core.ActivityCode
@@ -24,8 +25,9 @@ import org.pih.warehouse.core.Document
 import org.pih.warehouse.core.DocumentCommand
 import org.pih.warehouse.core.DocumentType
 import org.pih.warehouse.core.Location
-import org.pih.warehouse.core.User
 import org.pih.warehouse.importer.ImportDataCommand
+import org.pih.warehouse.order.Order
+import org.pih.warehouse.order.OrderTypeCode
 import org.pih.warehouse.picklist.PicklistItem
 import org.pih.warehouse.requisition.Requisition
 import org.pih.warehouse.requisition.RequisitionSourceType
@@ -38,7 +40,7 @@ class StockMovementController {
 
     def dataService
     def stockMovementService
-    def requisitionService
+    def outboundStockMovementService
     def shipmentService
     GrailsApplication grailsApplication
 
@@ -79,19 +81,24 @@ class StockMovementController {
 
     def edit() {
         Location currentLocation = Location.get(session.warehouse.id)
-        StockMovement stockMovement = params.id ? stockMovementService.getStockMovement(params.id) : null
+        StockMovement stockMovement = stockMovementService.getStockMovement(params.id)
 
-        StockMovementType stockMovementType = currentLocation == stockMovement.origin ?
-                StockMovementType.OUTBOUND : currentLocation == stockMovement.destination ?
-                        StockMovementType.INBOUND : null
+        if(!stockMovement.isEditAuthorized(currentLocation)) {
+            flash.error = stockMovementService.getDisabledMessage(stockMovement, currentLocation, true)
+            redirect(controller: "stockMovement", action: "show", id: params.id)
+            return
+        }
 
-        if (stockMovementType == StockMovementType.OUTBOUND && stockMovement.requisition.sourceType == RequisitionSourceType.ELECTRONIC) {
+        if(stockMovement.isReturn) {
+            redirect(controller: "stockTransfer", action: "edit", params: params)
+        } else if (stockMovement?.getStockMovementDirection(currentLocation) == StockMovementDirection.OUTBOUND && stockMovement?.requisition?.sourceType == RequisitionSourceType.ELECTRONIC) {
             redirect(action: "verifyRequest", params: params)
         }
-        else if (stockMovementType == StockMovementType.INBOUND) {
+        else if (stockMovement?.getStockMovementDirection(currentLocation) == StockMovementDirection.INBOUND) {
+
             if (stockMovement.isFromOrder) {
                 redirect(action: "createCombinedShipments", params: params)
-            } else if (stockMovement.requisition.sourceType == RequisitionSourceType.ELECTRONIC) {
+            } else if (stockMovement.requisition?.sourceType == RequisitionSourceType.ELECTRONIC) {
                 if (stockMovement.requisition?.status == RequisitionStatus.CREATED) {
                     redirect(action: "createRequest", params: params)
                 } else {
@@ -102,13 +109,27 @@ class StockMovementController {
             }
         }
         else {
+            if (stockMovement.isFromOrder) {
+                redirect(action: "createCombinedShipments", params: params)
+            }
             redirect(action: "createOutbound", params: params)
         }
     }
 
     def show() {
-        StockMovement stockMovement = stockMovementService.getStockMovement(params.id)
-        [stockMovement: stockMovement]
+        // Pull Outbound Stock movement (Requisition based) or Outbound or Inbound Return (Order based)
+        def stockMovement = outboundStockMovementService.getStockMovement(params.id)
+        // For inbound stockMovement only
+        if (!stockMovement) {
+            stockMovement =  stockMovementService.getStockMovement(params.id)
+        }
+        stockMovement.documents = stockMovementService.getDocuments(stockMovement)
+
+        if (stockMovement?.order) {
+            render(view: "/returns/show", model: [stockMovement: stockMovement])
+        } else {
+            render(view: "show", model: [stockMovement: stockMovement])
+        }
     }
 
     def list() {
@@ -119,25 +140,25 @@ class StockMovementController {
         Date createdBefore = params.createdBefore ? Date.parse("MM/dd/yyyy", params.createdBefore) : null
         Location currentLocation = Location.get(session?.warehouse?.id)
 
-        StockMovementType stockMovementType = params.direction ? params.direction as StockMovementType : null
+        StockMovementDirection stockMovementDirection = params.direction ? params.direction as StockMovementDirection : null
         // On initial request we set the origin and destination based on the direction
-        if (stockMovementType == StockMovementType.OUTBOUND) {
+        if (stockMovementDirection == StockMovementDirection.OUTBOUND) {
             params.origin = params.origin ?: currentLocation
             params.destination = params.destination ?: null
-        } else if (stockMovementType == StockMovementType.INBOUND) {
+        } else if (stockMovementDirection == StockMovementDirection.INBOUND) {
             params.origin = params.origin ?: null
             params.destination = params.destination ?: currentLocation
         } else {
             // This is necessary because sometimes we need to infer the direction from the parameters
             if (params.origin?.id == currentLocation?.id && params.destination?.id == currentLocation?.id) {
-                stockMovementType = null
+                stockMovementDirection = null
                 params.direction = null
             } else if (params.origin?.id == currentLocation?.id) {
-                stockMovementType = StockMovementType.OUTBOUND
-                params.direction = stockMovementType.toString()
+                stockMovementDirection = StockMovementDirection.OUTBOUND
+                params.direction = stockMovementDirection.toString()
             } else if (params.destination?.id == currentLocation?.id) {
-                stockMovementType = StockMovementType.INBOUND
-                params.direction = stockMovementType.toString()
+                stockMovementDirection = StockMovementDirection.INBOUND
+                params.direction = stockMovementDirection.toString()
             } else {
                 params.origin = params.origin ?: currentLocation
                 params.destination = params.destination ?: currentLocation
@@ -161,7 +182,7 @@ class StockMovementController {
             stockMovement.description = "%" + params.q + "%"
         }
 
-        stockMovement.stockMovementType = stockMovementType
+        stockMovement.stockMovementDirection = stockMovementDirection
         stockMovement.requestedBy = requisition.requestedBy
         stockMovement.createdBy = requisition.createdBy
         stockMovement.origin = requisition.origin
@@ -229,7 +250,8 @@ class StockMovementController {
     def rollback() {
         Location currentLocation = Location.get(session.warehouse.id)
         StockMovement stockMovement = stockMovementService.getStockMovement(params.id)
-        if (stockMovement.isDeleteOrRollbackAuthorized(currentLocation)) {
+        if (stockMovement.isDeleteOrRollbackAuthorized(currentLocation) ||
+                (stockMovement.isFromOrder && currentLocation?.supports(ActivityCode.ENABLE_CENTRAL_PURCHASING))) {
             try {
                 stockMovementService.rollbackStockMovement(params.id)
                 flash.message = "Successfully rolled back stock movement with ID ${params.id}"
@@ -289,6 +311,7 @@ class StockMovementController {
 
     def remove() {
         Location currentLocation = Location.get(session.warehouse.id)
+        boolean isCentralPurchasingEnabled = currentLocation?.supports(ActivityCode.ENABLE_CENTRAL_PURCHASING)
         StockMovement stockMovement = stockMovementService.getStockMovement(params.id)
         if (stockMovement.isDeleteOrRollbackAuthorized(currentLocation)) {
             if (stockMovement?.shipment?.currentStatus == ShipmentStatusCode.PENDING || !stockMovement?.shipment?.currentStatus) {
@@ -311,9 +334,13 @@ class StockMovementController {
             }
         }
         // We need to set the correct parameter so stock movement list is displayed properly
-        params.direction = (currentLocation == stockMovement.origin) ? StockMovementType.INBOUND :
-                (currentLocation == stockMovement.destination) ? StockMovementType.OUTBOUND : "ALL"
+        params.direction = (currentLocation == stockMovement.origin) ? StockMovementDirection.OUTBOUND :
+                (currentLocation == stockMovement.destination) ? StockMovementDirection.INBOUND : "ALL"
 
+        if (isCentralPurchasingEnabled) {
+            redirect(controller: 'order', action: "list", params: [orderTypeCode: OrderTypeCode.PURCHASE_ORDER])
+            return
+        }
         redirect(action: "list", params:params)
     }
 
@@ -325,8 +352,8 @@ class StockMovementController {
 
     def documents() {
         StockMovement stockMovement = stockMovementService.getStockMovement(params.id)
+        stockMovement.documents = stockMovementService.getDocuments(stockMovement)
         render(template: "documents", model: [stockMovement: stockMovement])
-
     }
 
     def packingList() {
@@ -340,6 +367,19 @@ class StockMovementController {
         render(template: "receipts", model: [receiptItems: receiptItems])
     }
 
+    // Used by SM show page 'tabs' actions - packing list, documents and receipts
+    def getStockMovement(String stockMovementId) {
+        def stockMovement
+        // Pull stock movement in "old fashion" way to bump up performance a bit (instead of getting OutboundStockMovement) for Non-Returns
+        def order = Order.get(stockMovementId)
+        if (order) {
+            stockMovement = outboundStockMovementService.getStockMovement(stockMovementId)
+        } else {
+            stockMovement = stockMovementService.getStockMovement(stockMovementId)
+        }
+
+        return stockMovement
+    }
 
     def uploadDocument(DocumentCommand command) {
         StockMovement stockMovement = stockMovementService.getStockMovement(params.id)
@@ -380,7 +420,10 @@ class StockMovementController {
 
     def addDocument() {
 
-        StockMovement stockMovement = stockMovementService.getStockMovement(params.id)
+        def stockMovement = outboundStockMovementService.getStockMovement(params.id)
+        if (!stockMovement) {
+            stockMovement =  stockMovementService.getStockMovement(params.id)
+        }
 
         Shipment shipmentInstance = stockMovement.shipment
         def documentInstance = Document.get(params?.document?.id)
@@ -391,7 +434,7 @@ class StockMovementController {
             flash.message = "${warehouse.message(code: 'default.not.found.message', args: [warehouse.message(code: 'shipment.label', default: 'Shipment'), params.id])}"
             redirect(action: "list")
         }
-        render(view: "addDocument", model: [shipmentInstance: shipmentInstance, documentInstance: documentInstance])
+        render(view: "addDocument", model: [shipmentInstance: shipmentInstance, documentInstance: documentInstance, stockMovementInstance: stockMovement])
     }
 
     def exportCsv() {
@@ -449,6 +492,7 @@ class StockMovementController {
                         productName         : product.name,
                         quantity            : value.sum { it.quantityRemaining },
                         expectedShippingDate: formatDate(date: shipment.expectedShippingDate, format: "dd-MMM-yy"),
+                        expectedDeliveryDate: formatDate(date: shipment.expectedDeliveryDate, format: "dd-MMM-yy"),
                         shipmentNumber      : shipment.shipmentNumber,
                         shipmentName        : shipment.name,
                         origin              : shipment.origin,
@@ -467,6 +511,7 @@ class StockMovementController {
                 "Product Name" { it.productName }
                 "Quantity Incoming" { it.quantity }
                 "Expected Shipping Date" { it.expectedShippingDate }
+                "Expected Delivery Date" { it.expectedDeliveryDate }
                 "Shipment Number" { it.shipmentNumber }
                 "Shipment Name" { it.shipmentName }
                 "Origin" { it.origin }
@@ -479,6 +524,7 @@ class StockMovementController {
                         productName         : shipmentItem.productName,
                         quantity            : shipmentItem.quantity,
                         expectedShippingDate: shipmentItem.expectedShippingDate,
+                        expectedDeliveryDate: shipmentItem.expectedDeliveryDate,
                         shipmentNumber      : shipmentItem.shipmentNumber,
                         shipmentName        : shipmentItem.shipmentName,
                         origin              : shipmentItem.origin,
@@ -492,6 +538,41 @@ class StockMovementController {
         } else {
             render(text: 'No shipments found', status: 404)
         }
+    }
+
+    def exportPendingRequisitionItems = {
+        Location currentLocation = Location.get(session?.warehouse?.id)
+
+        def pendingRequisitionItems = stockMovementService.getPendingRequisitionItems(currentLocation)
+
+        def sw = new StringWriter()
+        def csv = new CSVWriter(sw, {
+            "Shipment Number" { it.shipmentNumber }
+            "Description" { it.description }
+            "Destination" { it.destination }
+            "Status" { it.status }
+            "Product Code" { it.productCode }
+            "Product" { it.productName }
+            "Qty Picked" { it.quantityPicked }
+        })
+        pendingRequisitionItems.each { requisitionItem ->
+            def quantityPicked = requisitionItem?.totalQuantityPicked()
+            if (quantityPicked) {
+                csv << [
+                        shipmentNumber  : requisitionItem?.requisition?.requestNumber,
+                        description     : requisitionItem?.requisition?.description ?: '',
+                        destination     : requisitionItem?.requisition?.destination,
+                        status          : requisitionItem?.requisition?.status,
+                        productCode     : requisitionItem?.product?.productCode,
+                        productName     : requisitionItem?.product?.name,
+                        quantityPicked  : quantityPicked,
+                ]
+            }
+        }
+
+        response.setHeader("Content-disposition", "attachment; filename=\"PendingShipmentItems-${new Date().format("yyyyMMdd-hhmmss")}.csv\"")
+        render(contentType: "text/csv", text: sw.toString(), encoding: "UTF-8")
+
     }
 
 }

@@ -1,12 +1,20 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import PropTypes from 'prop-types';
-import ReactTable from 'react-table';
+
 import update from 'immutability-helper';
+import _ from 'lodash';
+import PropTypes from 'prop-types';
 import { getTranslate } from 'react-localize-redux';
-import { Tooltip } from 'react-tippy';
+import { connect } from 'react-redux';
 import Alert from 'react-s-alert';
+import ReactTable from 'react-table';
+import { Tooltip } from 'react-tippy';
+
+import { fetchTranslations, hideSpinner, showSpinner } from 'actions';
+import EmailModal from 'components/stock-list-management/EmailModal';
+import apiClient, { flattenRequest, parseResponse } from 'utils/apiClient';
+import Input from 'utils/Input';
+import Select from 'utils/Select';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-table/react-table.css';
 
@@ -83,10 +91,7 @@ class StocklistManagement extends Component {
 
     apiClient.get(url)
       .then((response) => {
-        const users = _.map(response.data.data, user => (
-          { value: { id: user.id, email: user.email, label: user.name }, label: user.name }
-        ));
-        this.setState({ users, usersFetched: true });
+        this.setState({ users: response.data.data, usersFetched: true });
       })
       .catch(() => this.props.hideSpinner());
   }
@@ -109,8 +114,7 @@ class StocklistManagement extends Component {
     apiClient.get(url)
       .then((response) => {
         this.setState({
-          availableStocklists: _.map(parseResponse(response.data.data), val =>
-            ({ value: val, label: val.name })),
+          availableStocklists: parseResponse(response.data.data),
           stocklistsFetched: true,
         });
       })
@@ -179,7 +183,7 @@ class StocklistManagement extends Component {
     let url = `/api/stocklistItems?product.id=${this.props.match.params.productId || ''}`;
 
     if (!item.new) {
-      url = `/api/stocklistItems/${item.requisitionItem.id}`;
+      url = `/openboxes/api/stocklistItems/${item.id}`;
     }
 
     apiClient.post(url, flattenRequest(item))
@@ -202,7 +206,7 @@ class StocklistManagement extends Component {
       this.removeItem(index);
     } else {
       this.props.showSpinner();
-      const url = `/api/stocklistItems/${item.requisitionItem.id}`;
+      const url = `/openboxes/api/stocklistItems/${item.id}`;
 
       apiClient.delete(url)
         .then(() => {
@@ -571,7 +575,8 @@ class StocklistManagement extends Component {
               value={this.state.selectedStocklist}
               onChange={value => this.setState({ selectedStocklist: value })}
               options={this.state.availableStocklists}
-              objectValue
+              valueKey="id"
+              labelKey="name"
               className="select-xs stocklist-select"
             />
             <button

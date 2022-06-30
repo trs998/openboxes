@@ -11,6 +11,7 @@ package org.pih.warehouse.core
 
 import grails.util.Holders
 import org.pih.warehouse.order.Order
+import org.pih.warehouse.order.OrderType
 import org.pih.warehouse.order.OrderTypeCode
 
 class Organization extends Party {
@@ -57,10 +58,20 @@ class Organization extends Party {
             projections {
                 count("id")
             }
-            eq("orderTypeCode", OrderTypeCode.PURCHASE_ORDER)
+            eq("orderType", OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name()))
             eq("destinationParty", this)
         }
+    }
 
+
+    String maxPurchaseOrderNumber() {
+        return Order.createCriteria().get {
+            projections {
+                max("orderNumber")
+            }
+            eq("orderType", OrderType.findByCode(OrderTypeCode.PURCHASE_ORDER.name()))
+            eq("destinationParty", this)
+        }
     }
 
     Boolean hasRoleType(RoleType roleType) {

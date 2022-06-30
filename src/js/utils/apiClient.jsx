@@ -1,11 +1,12 @@
 /* eslint-disable no-console */
-import _ from 'lodash';
 import React from 'react';
-import axios from 'axios';
-import Alert from 'react-s-alert';
-import { confirmAlert } from 'react-confirm-alert';
 
-import LoginModal from '../components/LoginModal';
+import axios from 'axios';
+import _ from 'lodash';
+import { confirmAlert } from 'react-confirm-alert';
+import Alert from 'react-s-alert';
+
+import LoginModal from 'components/LoginModal';
 
 const justRejectRequestError = error => Promise.reject(error);
 
@@ -49,9 +50,9 @@ export function flattenRequest(data) {
   return data === null || data === undefined ? '' : data;
 }
 
-const handleSuccess = response => response;
+export const handleSuccess = response => response;
 
-const handleError = (error) => {
+export const handleError = (error) => {
   switch (error.response.status) {
     case 400:
       Alert.error(`Bad Request.</br> ${_.map(_.get(error, 'response.data.errorMessages', ''), errorMessage => `<div>${errorMessage}</div>`)}`);

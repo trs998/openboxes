@@ -72,6 +72,27 @@ class UserService {
         return userInstance.save(failOnError: true)
     }
 
+
+    void assignDefaultRoles(User userInstance) {
+        try {
+            def defaultRoles = grailsApplication.config.openboxes.signup.defaultRoles
+            if (!defaultRoles.isEmpty()) {
+                def roleTypes = defaultRoles.split(",")
+                roleTypes.each { roleType ->
+                    def role = Role.findByRoleType(roleType)
+                    userInstance.addToRoles(role)
+                }
+
+                if (userInstance.roles) {
+                    userInstance.active = Boolean.TRUE
+                }
+                userInstance.save()
+            }
+        } catch (Exception e) {
+            log.error("Unable to assign default roles: " + e.message, e)
+        }
+    }
+
     private void updateRoles(user, locationRolePairs) {
         def newAndUpdatedRoles = locationRolePairs.keySet().collect { locationId ->
             if (locationRolePairs[locationId]) {
@@ -121,6 +142,25 @@ class UserService {
         return false
     }
 
+    Boolean isUserRequestor(User u) {
+        if (u) {
+            def user = User.get(u.id)
+            def roles = [RoleType.ROLE_REQUESTOR]
+            return getEffectiveRoles(user).any { roles.contains(it.roleType) }
+        }
+        return false
+    }
+
+    Boolean hasHighestRole(User u, String locationId, RoleType roleType) {
+        if (u) {
+            def user = User.get(u.id)
+            Location currentLocation = Location.get(locationId)
+            def highestRole = user.getHighestRole(currentLocation)
+            return roleType == highestRole?.roleType
+        }
+        return false
+    }
+
     Boolean canUserBrowse(User u) {
         if (u) {
             def user = User.get(u.id)
@@ -156,6 +196,34 @@ class UserService {
         return false
     }
 
+    Boolean hasRoleInvoice(User u) {
+        if (u) {
+            def user = User.get(u.id)
+            def roleTypes = [RoleType.ROLE_INVOICE]
+            def co = getEffectiveRoles(user).any { Role role -> roleTypes.contains(role.roleType) }
+            return co
+        }
+        return false
+    }
+
+    Boolean hasRoleBrowser(User u) {
+        if (u) {
+            def user = User.get(u.id)
+            def roleTypes = [RoleType.ROLE_BROWSER]
+            return getEffectiveRoles(user).any { Role role -> roleTypes.contains(role.roleType) }
+        }
+        return false
+    }
+
+    // Checks if requestor role exist for any location - for location chooser purposes
+    Boolean hasRoleRequestorInAnyLocations(User u) {
+        if (u) {
+            def user = User.get(u.id)
+            def roleTypes = [RoleType.ROLE_REQUESTOR]
+            return user.getAllRoles().any { Role role -> roleTypes.contains(role.roleType) }
+        }
+        return false
+    }
 
     Boolean canEditUserRoles(User currentUser, User otherUser) {
         def location = AuthService.currentLocation.get()
@@ -335,71 +403,26 @@ class UserService {
     }
 
     def getDashboardConfig(User user) {
-        def config = grailsApplication.config.openboxes.tablero
+        def config = grailsApplication.config.openboxes.dashboardConfig
         def userConfig = user.deserializeDashboardConfig()
         Boolean configChanged = false
 
         if (userConfig != null) {
-            int userConfigSize = userConfig.graph.size() + userConfig.number.size()
-            int configSize = config.endpoints.number.size() + config.endpoints.graph.size()
+            int userConfigSize = userConfig.size()
+            int configSize = config.dashboards.size()
             // If the size is different, that mean that the config has changed
             if (userConfigSize != configSize) {
                 return config
             }
-            // Checking all keys in number to know if one changed
-            config.endpoints.number.each { element ->
-                if (userConfig.number.find { it.key == element.key} == null) {
-                    configChanged = true
-                }
+            if (!configChanged) {
+                config = [
+                        dashboards          : userConfig,
+                        dashboardWidgets    : config.dashboardWidgets
+                ]
             }
-            if(!configChanged) updateConfig("number", config, userConfig)
-
-            // Reset configChanged to false to check the other part of the config
-            configChanged = false
-
-            // Checking all keys in graph
-            config.endpoints.graph.each { element ->
-                if (userConfig.graph.find { it.key == element.key} == null) {
-                    configChanged = true
-                }
-            }
-            if(!configChanged) updateConfig("graph", config, userConfig)
         }
 
         return config
-    }
-
-    private def updateConfig(type, config, customConfig) {
-        customConfig[type].each { key, value ->
-            // Update order
-            config["endpoints"][type][key]["order"] = value["order"]
-
-            // If the indicator should be archived but it currently isn't
-            boolean archivedInConfig = config["endpoints"][type][key]["archived"].indexOf("personal") != -1
-            if (value["archived"] && !archivedInConfig) {
-                config["endpoints"][type][key]["archived"].add("personal")
-            }
-
-            // If the indicator shouldn't be archived but it currently is
-            if (!value["archived"] && archivedInConfig) {
-                config["endpoints"][type][key]["archived"].remove("personal")
-            }
-        }
-
-        // Fix to ensure each order appears only once
-        for (int order = 1; order <= config["endpoints"][type].size(); order++) {
-            List indicators = config["endpoints"][type].findAll { key, value ->
-                value.order == order
-            }.collect { key, value ->
-                key
-            }
-
-            if (indicators.size() > 1) {
-                for (int i = 1; i < indicators.size(); i++) {
-                    config["endpoints"][type][indicators[i]]["order"] = order + i
-                }
-            }
-        }
     }
 
     def updateDashboardConfig(User user, Object config) {

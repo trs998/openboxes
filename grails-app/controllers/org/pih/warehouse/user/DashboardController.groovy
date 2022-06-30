@@ -11,15 +11,16 @@ package org.pih.warehouse.user
 
 import grails.converters.JSON
 import grails.core.GrailsApplication
+import grails.plugin.springcache.annotations.Cacheable
 import org.apache.commons.lang.StringEscapeUtils
 import grails.util.Holders
 import org.pih.warehouse.core.Comment
 import org.pih.warehouse.core.Location
+import org.pih.warehouse.core.RoleType
 import org.pih.warehouse.core.Tag
 import org.pih.warehouse.core.User
 import org.pih.warehouse.inventory.InventoryItem
 import org.pih.warehouse.inventory.Transaction
-import org.pih.warehouse.jobs.RefreshInventorySnapshotJob
 import org.pih.warehouse.jobs.RefreshProductAvailabilityJob
 import org.pih.warehouse.order.Order
 import org.pih.warehouse.product.Product
@@ -35,15 +36,14 @@ import java.text.SimpleDateFormat
 
 class DashboardController {
 
-    def shipmentService
     def inventoryService
     def dashboardService
     def productService
-    def requisitionService
     def userService
     def sessionFactory
     def locationService
     GrailsApplication grailsApplication
+    def userAgentIdentService
     GitProperties gitProperties
 
     def showCacheStatistics() {
@@ -81,7 +81,7 @@ class DashboardController {
 
         def shipment = Shipment.findByShipmentNumber(params.searchTerms)
         if (shipment) {
-            redirect(controller: "stockMovement", action: "show", id: shipment.id)
+            redirect(controller: "stockMovement", action: "show", id: shipment.returnOrder?.id ?: shipment.id)
             return
         }
 
@@ -92,6 +92,10 @@ class DashboardController {
         }
         def order = Order.findByOrderNumber(params.searchTerms)
         if (order) {
+            if (order.isReturnOrder) {
+                redirect(controller: "stockMovement", action: "show", id: order.id)
+                return
+            }
             redirect(controller: "order", action: "show", id: order.id)
             return
         }
@@ -99,50 +103,23 @@ class DashboardController {
         redirect(controller: "inventory", action: "browse", params: params)
 
     }
-    def throwException() {
-        try {
-            throw new RuntimeException("error of some kind")
-        } catch (RuntimeException e) {
-            log.error("Caught runtime exception: ${e.message}", e)
-            throw new RuntimeException("another exception wrapped in this exception", e)
-        }
-    }
-
-    def old() {
-
-        def startTime = System.currentTimeMillis()
-        if (!session.warehouse) {
-            redirect(action: "chooseLocation")
-        }
-
-        def currentUser = User.get(session?.user?.id)
-        def location = Location.get(session?.warehouse?.id)
-        def recentOutgoingShipments = shipmentService.getRecentOutgoingShipments(location?.id, 7, 7)
-        def outgoingShipmentsByStatus = shipmentService.getShipmentsByStatus(recentOutgoingShipments)
-        def recentIncomingShipments = shipmentService.getRecentIncomingShipments(location?.id, 7, 7)
-        def incomingShipmentsByStatus = shipmentService.getShipmentsByStatus(recentIncomingShipments)
-        def rootCategory = productService.getRootCategory()
-        def newsItems = Holders.getConfig().getProperty("openboxes.dashboard.newsSummary.newsItems")
-        def catalogs = productService?.getAllCatalogs()
-        def tags = productService?.getPopularTags(50)
-        def requisitionStatistics = requisitionService.getRequisitionStatistics(location, null, params.onlyShowMine ? currentUser : null, null, [RequisitionStatus.ISSUED, RequisitionStatus.CANCELED] as List)
-
-        [
-                newsItems                : newsItems,
-                rootCategory             : rootCategory,
-                requisitionStatistics    : requisitionStatistics,
-                outgoingShipmentsByStatus: outgoingShipmentsByStatus,
-                incomingShipmentsByStatus: incomingShipmentsByStatus,
-                tags                     : tags,
-                catalogs                 : catalogs
-        ]
-    }
 
     def index = {
+        if (userAgentIdentService.isMobile()) {
+            redirect(controller: "mobile")
+            return
+        }
+        if (userService.hasHighestRole(session?.user, session?.warehouse?.id, RoleType.ROLE_AUTHENTICATED)) {
+            redirect(controller: "stockMovement", action: "list", params: [direction: 'INBOUND'] )
+            return
+        }
+        render(template: "/common/react")
+    }
+
+    def supplier = {
         def contextPath = grailsApplication.config.server.contextPath
         render(template: "/common/react", model: [contextPath: contextPath != '/' ? contextPath : ''])
     }
-
 
     def expirationSummary() {
         def location = Location.get(session.warehouse.id)
@@ -183,52 +160,11 @@ class DashboardController {
 
     //@Cacheable("megamenuCache")
     def megamenu() {
-
-        def user = User.get(session?.user?.id)
-        def location = Location.get(session?.warehouse?.id)
-
-        // Inbound Shipments
-        def inboundShipmentsTotal = Shipment.countByDestination(location)
-        def inboundShipmentsCount = Shipment.executeQuery(
-                """	select shipment.currentStatus, count(*) 
-							from Shipment as shipment
-							where shipment.destination = :destination
-							group by shipment.currentStatus""", [destination: location])
-
-        inboundShipmentsCount = inboundShipmentsCount.collect { [status: it[0], count: it[1]] }
-
-        // Outbound Shipments
-        def outboundShipmentsTotal = Shipment.countByOrigin(location)
-        def outboundShipmentsCount = Shipment.executeQuery(
-                """	select shipment.currentStatus, count(*) 
-							from Shipment as shipment 
-							where shipment.origin = :origin 
-							group by shipment.currentStatus""", [origin: location])
-
-        outboundShipmentsCount = outboundShipmentsCount.collect { [status: it[0], count: it[1]] }
-
-        // Orders
-        def incomingOrders = Order.executeQuery('select o.status, count(*) as count from Order as o where o.destination = ? group by o.status', [location])
-
-        // Requisitions
-        def requisitionStatistics = requisitionService.getRequisitionStatistics(location, null, user, new Date() - 30)
-
-        def categories = []
-        def category = productService.getRootCategory()
-        categories = category.categories
-        categories = categories.groupBy { it?.parentCategory }
-
         [
-                categories            : categories,
                 isSuperuser           : userService.isSuperuser(session?.user),
                 megamenuConfig        : grailsApplication.config.openboxes.megamenu,
-                inboundShipmentsTotal : inboundShipmentsTotal ?: 0,
-                inboundShipmentsCount : inboundShipmentsCount,
-                outboundShipmentsTotal: outboundShipmentsTotal ?: 0,
-                outboundShipmentsCount: outboundShipmentsCount,
-                incomingOrders        : incomingOrders,
-                requisitionStatistics : requisitionStatistics,
-                quickCategories       : productService.getQuickCategories()
+                quickCategories       : productService.quickCategories,
+                categories            : productService.rootCategory.categories.groupBy { it.parentCategory?.id },
         ]
     }
 
@@ -265,9 +201,13 @@ class DashboardController {
             if (user) {
                 //userInstance.rememberLastLocation = Boolean.valueOf(params.rememberLastLocation)
                 user.lastLoginDate = new Date()
-                user.warehouse = warehouse
                 user.save(flush: true)
                 session.user = user
+            }
+
+            if (userService.hasHighestRole(session?.user, session?.warehouse?.id, RoleType.ROLE_AUTHENTICATED)) {
+                redirect(controller: 'stockMovement', action: 'list' , params: [direction: 'INBOUND'])
+                return
             }
 
             // Successfully logged in and selected a warehouse
@@ -283,14 +223,23 @@ class DashboardController {
             return
         }
 
-        [savedLocations: user.warehouse ? [user.warehouse] : null, loginLocationsMap: locationService.getLoginLocationsMap(user, warehouse)]
+        def loginLocationsMap = locationService.getLoginLocationsMap(user, warehouse)
+        def savedLocations = user.warehouse && loginLocationsMap.containsValue(user.warehouse) ? [user.warehouse] : null
+
+        if (userAgentIdentService.isMobile()) {
+            render (view: "/mobile/chooseLocation",
+                    model: [savedLocations: savedLocations, loginLocationsMap: loginLocationsMap])
+            return
+        }
+
+        [savedLocations: savedLocations, loginLocationsMap: loginLocationsMap]
     }
 
 
     def changeLocation() {
         User user = User.get(session.user.id)
         Map loginLocationsMap = locationService.getLoginLocationsMap(user, null)
-        List savedLocations = [user?.warehouse, session?.warehouse].unique()
+        List savedLocations = [user?.warehouse, session?.warehouse].unique() - null
         render(template: "loginLocations", model: [savedLocations: savedLocations, loginLocationsMap: loginLocationsMap])
     }
 

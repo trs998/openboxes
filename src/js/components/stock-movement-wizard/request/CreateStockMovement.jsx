@@ -1,15 +1,25 @@
-import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
-import PropTypes from 'prop-types';
-import { Form } from 'react-final-form';
-import { withRouter } from 'react-router-dom';
-import { confirmAlert } from 'react-confirm-alert';
-import { getTranslate } from 'react-localize-redux';
+
 import update from 'immutability-helper';
+import _ from 'lodash';
+import moment from 'moment';
+import PropTypes from 'prop-types';
+import { confirmAlert } from 'react-confirm-alert';
+import { Form } from 'react-final-form';
+import { getTranslate } from 'react-localize-redux';
+import { connect } from 'react-redux';
+import { withRouter } from 'react-router-dom';
+
+import { hideSpinner, showSpinner } from 'actions';
+import DateField from 'components/form-elements/DateField';
+import SelectField from 'components/form-elements/SelectField';
+import TextField from 'components/form-elements/TextField';
+import apiClient from 'utils/apiClient';
+import { renderFormField } from 'utils/form-utils';
+import { debounceLocationsFetch, debounceUsersFetch } from 'utils/option-utils';
+import Translate, { translateWithDefaultMessage } from 'utils/Translate';
 
 import 'react-confirm-alert/src/react-confirm-alert.css';
-import moment from 'moment';
 
 import TextField from '../../form-elements/TextField';
 import SelectField from '../../form-elements/SelectField';
@@ -140,6 +150,8 @@ const FIELDS = {
     label: 'react.stockMovement.requestType.label',
     defaultMessage: 'Request type',
     attributes: {
+      valueKey: 'id',
+      labelKey: 'name',
       required: true,
       showValueTooltip: true,
     },
@@ -157,7 +169,8 @@ const FIELDS = {
       disabled: !(origin && destination && origin.id && destination.id),
       options: stocklists,
       showValueTooltip: true,
-      objectValue: true,
+      valueKey: 'id',
+      labelKey: 'name',
       onChange: (value) => {
         if (value) {
           setRequestType(values, value);
@@ -204,9 +217,11 @@ class CreateStockMovement extends Component {
   }
 
   setRequestType(values, stocklist) {
+    const requestType = _.find(this.state.requestTypes, type => type.id === 'STOCK');
+
     this.setState({
       values: update(values, {
-        requestType: { $set: 'STOCK' },
+        requestType: { $set: requestType },
         stocklist: { $set: stocklist },
       }),
     });
@@ -241,12 +256,7 @@ class CreateStockMovement extends Component {
 
     return apiClient.get(url)
       .then((response) => {
-        const requestTypes = _.map(response.data.data, type => ({
-          value: type.id,
-          label: type.name,
-        }));
-
-        this.setState({ requestTypes }, () => this.props.hideSpinner());
+        this.setState({ requestTypes: response.data.data }, () => this.props.hideSpinner());
       })
       .catch(() => this.props.hideSpinner());
   }
@@ -281,7 +291,9 @@ class CreateStockMovement extends Component {
     return apiClient.get(url)
       .then((response) => {
         const stocklists = _.map(response.data.data, stocklist => (
-          { value: { id: stocklist.id, name: stocklist.name }, label: stocklist.name }
+          {
+            id: stocklist.id, name: stocklist.name, value: stocklist.id, label: stocklist.name,
+          }
         ));
 
         const stocklistChanged = !_.find(stocklists, item => item.value.id === _.get(this.state.values, 'stocklist'));
@@ -317,11 +329,11 @@ class CreateStockMovement extends Component {
         name: '',
         description: values.description,
         dateRequested: values.dateRequested,
-        origin: values.origin.id,
-        destination: values.destination.id,
-        requestedBy: values.requestedBy.id,
-        stocklist: _.get(values.stocklist, 'id') || '',
-        requestType: values.requestType,
+        'origin.id': values.origin.id,
+        'destination.id': values.destination.id,
+        'requestedBy.id': values.requestedBy.id,
+        'stocklist.id': _.get(values.stocklist, 'id') || '',
+        requestType: values.requestType.id,
         sourceType: ELECTRONIC,
       };
 
@@ -337,6 +349,7 @@ class CreateStockMovement extends Component {
               movementNumber: resp.identifier,
               name: resp.name,
               stocklist: resp.stocklist,
+              replenishmentType: resp.replenishmentType,
             });
           }
         })

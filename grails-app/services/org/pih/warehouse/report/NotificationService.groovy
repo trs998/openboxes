@@ -10,8 +10,12 @@
 package org.pih.warehouse.report
 
 import grails.core.GrailsApplication
+import org.apache.commons.mail.EmailException
 import org.apache.commons.validator.EmailValidator
 import org.grails.plugins.web.taglib.RenderTagLib
+import org.codehaus.groovy.grails.commons.ApplicationHolder
+import org.codehaus.groovy.grails.plugins.web.taglib.ApplicationTagLib
+import org.codehaus.groovy.grails.plugins.web.taglib.RenderTagLib
 import grails.web.context.ServletContextHolder
 import org.grails.web.errors.GrailsWrappedRuntimeException
 import org.pih.warehouse.api.PartialReceipt
@@ -132,7 +136,7 @@ class NotificationService {
         def recipientItems = shipmentInstance.shipmentItems.groupBy {it.recipient }
         recipientItems.each { Person recipient, items ->
             if (emailValidator.isValid(recipient?.email)) {
-                def subject = g.message(code: "email.yourItemShipped.message", args: [shipmentInstance.shipmentNumber])
+                def subject = g.message(code: "email.yourItemShipped.message", args: [shipmentInstance.origin.name, shipmentInstance.destination.name, shipmentInstance.shipmentNumber])
                 def body = "${g.render(template: "/email/shipmentItemShipped", model: [shipmentInstance: shipmentInstance, shipmentItems: items, recipient:recipient])}"
                 mailService.sendHtmlMail(subject, body.toString(), recipient.email)
             }
@@ -148,14 +152,14 @@ class NotificationService {
     }
 
     def sendReceiptNotifications(PartialReceipt partialReceipt) {
-        def shipment = partialReceipt.shipment
+        Shipment shipment = partialReceipt?.shipment
         def emailValidator = EmailValidator.getInstance()
         def g = grailsApplication.mainContext.getBean('org.grails.plugins.web.taglib..ApplicationTagLib')
         def recipientItems = partialReceipt.partialReceiptItems.groupBy {it.recipient }
         recipientItems.each { Person recipient, items ->
             if (emailValidator.isValid(recipient?.email)) {
-                def subject = g.message(code: "email.yourItemReceived.message", args: [shipment.shipmentNumber])
-                def body = "${g.render(template: "/email/shipmentItemReceived", model: [shipmentInstance: shipment, receiptItems: items, recipient: recipient])}"
+                def subject = g.message(code: "email.yourItemReceived.message", args: [shipment.destination.name, shipment.shipmentNumber])
+                def body = "${g.render(template: "/email/shipmentItemReceived", model: [shipmentInstance: shipment, receiptItems: items, recipient: recipient, receivedBy: partialReceipt.recipient])}"
                 mailService.sendHtmlMail(subject, body.toString(), recipient.email)
             }
         }
@@ -178,18 +182,35 @@ class NotificationService {
         }
     }
 
-    def renderTemplate(String template, Map model) {
-        // FIXME Need to fix this when we migrate to grails 3
-        // Hack to ensure that the GSP template engine has access to a request.
-        def webRequest = RequestContextHolder.getRequestAttributes()
-        if(!webRequest) {
-            def servletContext = ServletContextHolder.getServletContext()
-            def applicationContext = WebApplicationContextUtils.getRequiredWebApplicationContext(servletContext)
-            grails.util.GrailsWebUtil.bindMockWebRequest(applicationContext)
+    def sendUserAccountCreation(User userInstance, Map additionalQuestions) {
+        try {
+            // Send email to user notification recipients
+            def recipients = userService.findUsersByRoleType(RoleType.ROLE_USER_NOTIFICATION)
+            if (recipients) {
+                def locale = new Locale(grailsApplication.config.openboxes.locale.defaultLocale)
+                def to = recipients?.collect { it.email }?.unique()
+                def subject = messageSource.getMessage('email.userAccountCreated.message', [userInstance.username].toArray(), locale)
+                def body = renderTemplate("/email/userAccountCreated", [userInstance: userInstance, additionalQuestions: additionalQuestions])
+                mailService.sendHtmlMail(subject, body.toString(), to)
+            }
+
+        } catch (EmailException e) {
+            log.error("Unable to send creation email: " + e.message, e)
         }
-        return new RenderTagLib().render(template: template, model: model)
     }
 
-
+    def sendUserAccountConfirmation(User userInstance, Map additionalQuestions) {
+        try {
+            // Send confirmation email to user
+            if (userInstance?.email) {
+                def locale = userInstance?.locale ?: new Locale(grailsApplication.config.openboxes.locale.defaultLocale)
+                def subject = messageSource.getMessage('email.userAccountConfirmed.message', [userInstance?.email].toArray(), locale)
+                def body = renderTemplate("/email/userAccountConfirmed", [userInstance: userInstance, additionalQuestions: additionalQuestions])
+                mailService.sendHtmlMail(subject, body.toString(), userInstance?.email)
+            }
+        } catch (EmailException e) {
+            log.error("Unable to send confirmation email: " + e.message, e)
+        }
+    }
 
 }

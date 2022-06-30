@@ -10,8 +10,10 @@
 package org.pih.warehouse.core
 
 import grails.util.Holders
+import org.grails.plugins.excelimport.ExcelImportUtils
 import org.pih.warehouse.inventory.Inventory
 import org.pih.warehouse.inventory.InventorySnapshotEvent
+import org.pih.warehouse.inventory.RefreshProductAvailabilityEvent
 import org.pih.warehouse.inventory.Transaction
 import org.pih.warehouse.order.Order
 import org.pih.warehouse.requisition.Requisition
@@ -25,6 +27,7 @@ class Location implements Comparable<Location>, java.io.Serializable {
 
     def publishPersistenceEvent = {
         Holders.grailsApplication.mainContext.publishEvent(new InventorySnapshotEvent(this))
+        publishEvent(new RefreshProductAvailabilityEvent(this))
     }
 
     def afterInsert = publishPersistenceEvent
@@ -46,10 +49,11 @@ class Location implements Comparable<Location>, java.io.Serializable {
     LocationType locationType
     LocationGroup locationGroup
     Organization organization
+    Location zone
 
     User manager                                // the person in charge of the warehouse
     Inventory inventory                            // each warehouse has a single inventory
-    Boolean local = Boolean.TRUE
+
     // indicates whether this warehouse is being managed on the locally deployed system
     Boolean active = Boolean.TRUE
     // indicates whether this warehouse is currently active
@@ -60,6 +64,7 @@ class Location implements Comparable<Location>, java.io.Serializable {
 
     static belongsTo = [parentLocation: Location, organization: Organization]
     static hasMany = [locations: Location, supportedActivities: String, employees: User]
+    static mappedBy = [locations: "parentLocation"]
 
     static constraints = {
         name(nullable: false, blank: false, maxSize: 255, unique: 'parentLocation')
@@ -75,6 +80,7 @@ class Location implements Comparable<Location>, java.io.Serializable {
         locationNumber(nullable: true, unique: true)
         locationGroup(nullable: true)
         parentLocation(nullable: true)
+        zone(nullable: true)
         bgColor(nullable: true, validator: { bgColor, obj ->
             def fgColor = obj.properties['fgColor']
             if (fgColor == null) return true
@@ -82,7 +88,6 @@ class Location implements Comparable<Location>, java.io.Serializable {
         })
         fgColor(nullable: true)
         logo(nullable: true, maxSize: 10485760) // 10 MBs
-        local(nullable: true)
         manager(nullable: true)
         inventory(nullable: true)
         active(nullable: false)
@@ -96,7 +101,7 @@ class Location implements Comparable<Location>, java.io.Serializable {
         cache true
     }
 
-    static transients = ["transactions", "events", "shipments", "requests", "orders"]
+    static transients = ["transactions", "events", "shipments", "requests", "orders", "managedLocally"]
 
     List getTransactions() { return Transaction.findAllByDestinationOrSource(this, this) }
 
@@ -157,13 +162,17 @@ class Location implements Comparable<Location>, java.io.Serializable {
 
     }
 
+    Boolean isManagedLocally() {
+        return supports(ActivityCode.MANAGE_INVENTORY)
+    }
+
     /**
      * Indicates whether this location requires outbound quantity validation.
      *
      * @return
      */
     Boolean requiresOutboundQuantityValidation() {
-        return active && local && isWarehouse()
+        return active && managedLocally && isWarehouse()
     }
 
     /**
@@ -232,12 +241,32 @@ class Location implements Comparable<Location>, java.io.Serializable {
         return supportsAny(requiredActivities) && !binLocations?.empty
     }
 
+    Boolean isInternalLocation() {
+        return locationType?.isInternalLocation()
+    }
+
+    Boolean isFacilityLocation() {
+        return locationType?.isFacilityLocation()
+    }
+
+    Boolean isZoneLocation() {
+        return locationType?.isZone()
+    }
+
     /**
      * @return all physical locations
      */
     @Deprecated
     static AllDepotWardAndPharmacy() {
         Location.list().findAll { it.isDepotWardOrPharmacy() }.sort { it.name }
+    }
+
+    List<Location> getInternalLocations() {
+        return locations?.toList()?.findAll { it.isInternalLocation() }
+    }
+
+    List<Location> getInternalLocationsByZone(Location zone) {
+        return locations?.toList()?.findAll { it.isInternalLocation() && it.zone?.id == zone?.id }
     }
 
     /**
@@ -262,7 +291,7 @@ class Location implements Comparable<Location>, java.io.Serializable {
         if (locationTypeCodes) {
             internalLocations?.findAll { it.locationType?.locationTypeCode in locationTypeCodes }
         }
-        internalLocations = internalLocations.sort { a, b -> a.sortOrder <=> b.sortOrder ?: a.name <=> b.name }
+        internalLocations = internalLocations?.sort { a, b -> a.sortOrder <=> b.sortOrder ?: a.name <=> b.name }
         return internalLocations
     }
 
@@ -270,4 +299,29 @@ class Location implements Comparable<Location>, java.io.Serializable {
         return Holders.config.openboxes.accounting.enabled && supports(ActivityCode.REQUIRE_ACCOUNTING)
     }
 
+    Boolean isOnHold() {
+        return supports(ActivityCode.HOLD_STOCK)
+    }
+
+    Boolean isPickable() {
+        return !onHold
+    }
+
+    static PROPERTIES = [
+            "id"              : "id",
+            "name"            : "name",
+            "active"          : "active",
+            "locationNumber"  : "locationNumber",
+            "locationType"    : "locationType.name",
+            "locationGroup"   : "locationGroup.name",
+            "parentLocation"  : "parentLocation.name",
+            "organization"    : "organization.name",
+            "streetAddress"   : "address.address",
+            "streetAddress2"  : "address.address2",
+            "city"            : "address.city",
+            "stateOrProvince" : "address.stateOrProvince",
+            "postalCode"      : "address.postalCode",
+            "country"         : "address.country",
+            "description"     : "address.description",
+    ]
 }
