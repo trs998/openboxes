@@ -15,6 +15,7 @@ const RECEIVING_VIEW = path.resolve(GRAILS_VIEWS, 'partialReceiving');
 const FileManagerPlugin = require('filemanager-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const MomentLocalesPlugin = require('moment-locales-webpack-plugin');
 const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin');
 
 module.exports = {
@@ -70,6 +71,10 @@ module.exports = {
       new MiniCssExtractPlugin({
         filename: 'stylesheets/bundle.[hash].css',
         chunkFilename: 'bundle.[hash].[name].css',
+      }),
+      new MomentLocalesPlugin({
+        // no sense supporting locales beyond our messages_XX.properties
+        localesToKeep: ['ar', 'de', 'en', 'es', 'fi', 'fr', 'it', 'pt', 'zh-cn'],
       }),
       new OptimizeCSSAssetsPlugin({}),
       new HtmlWebpackPlugin({
