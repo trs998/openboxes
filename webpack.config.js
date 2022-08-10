@@ -113,10 +113,16 @@ module.exports = {
           loader: 'eslint-loader',
         },
         {
-          test: /\.jsx$/,
-          loader: 'babel-loader?presets[]=es2015&presets[]=react&presets[]=stage-1',
           include: SRC,
           exclude: /node_modules/,
+          use: {
+            loader: 'babel-loader',
+            options: {
+              cacheDirectory: true,
+              plugins: ['@babel/plugin-transform-runtime'],
+              presets: ['@babel/preset-env', '@babel/preset-react'],
+            },
+          },
         },
         {
           test: /\.(sa|sc|c)ss$/,
