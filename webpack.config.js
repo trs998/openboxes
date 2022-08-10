@@ -12,14 +12,18 @@ const GRAILS_VIEWS = path.resolve(__dirname, 'grails-app/views');
 const COMMON_VIEW = path.resolve(GRAILS_VIEWS, 'common');
 const RECEIVING_VIEW = path.resolve(GRAILS_VIEWS, 'partialReceiving');
 
+const FileManagerPlugin = require('filemanager-webpack-plugin');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin');
-const HtmlWebpackPlugin = require('html-webpack-plugin');
-const FileManagerPlugin = require('filemanager-webpack-plugin');
 
 module.exports = {
     entry: {
       app: `${SRC}/index.jsx`,
+    },
+    node: {
+      Buffer: false,
+      process: false,
     },
     output: {
       path: DEST,
@@ -31,33 +35,36 @@ module.exports = {
     },
     plugins: [
       new FileManagerPlugin({
-        onStart: {
-          delete: [
-            `${JS_DEST}/bundle.**`,
-            `${CSS_DEST}/bundle.**`,
-            `${BUILD_ASSETS}/bundle.**`
-          ]
-        },
-        onEnd: {
-          copy: [
-            { source: `${DEST}/bundle.*.js`, destination: JS_DEST },
-            { source: `${DEST}/bundle.*.css`, destination: CSS_DEST },
-            { source: `${DEST}/*.eot`, destination: IMAGES_DEST },
-            { source: `${DEST}/*.svg`, destination: IMAGES_DEST },
-            { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
-            { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
-            { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
-            { source: `${JS_DEST}/bundle.*.js`, destination: BUILD_ASSETS },
-            { source: `${CSS_DEST}/bundle.*.css`, destination: BUILD_ASSETS }
-          ],
-          delete: [
-            `${DEST}/bundle.**`,
-            `${DEST}/*.eot`,
-            `${DEST}/*.svg`,
-            `${DEST}/*.woff2`,
-            `${DEST}/*.ttf`,
-            `${DEST}/*.woff`
-          ]
+        events: {
+          onStart: {
+            delete: [
+              `${BUILD_ASSETS}/bundle.**`,
+              `${CSS_DEST}/bundle.**`,
+              `${JS_DEST}/bundle.**`,
+            ]
+          },
+          onEnd: {
+            copy: [
+              { source: `${DEST}/bundle.*.css`, destination: CSS_DEST },
+              { source: `${DEST}/bundle.*.js`, destination: JS_DEST },
+              { source: `${DEST}/*.eot`, destination: IMAGES_DEST },
+              { source: `${DEST}/*.svg`, destination: IMAGES_DEST },
+              { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
+              { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
+              { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
+
+              { source: `${CSS_DEST}/bundle.*.css`, destination: BUILD_ASSETS },
+              { source: `${JS_DEST}/bundle.*.js`, destination: BUILD_ASSETS },
+            ],
+            delete: [
+              `${DEST}/bundle.**`,
+              `${DEST}/*.eot`,
+              `${DEST}/*.svg`,
+              `${DEST}/*.ttf`,
+              `${DEST}/*.woff`,
+              `${DEST}/*.woff2`,
+            ]
+          }
         }
       }),
       new MiniCssExtractPlugin({
