@@ -1,7 +1,10 @@
 {
-  "parser": "babel-eslint",
+  "parser": "@babel/eslint-parser",
   "plugins": [
+    "import",
+    "jsx-a11y",
     "react",
+    "react-hooks",
     "simple-import-sort"
   ],
   "parserOptions": {
@@ -10,7 +13,8 @@
     "allowImportExportEverywhere": true,
     "ecmaFeatures": {
       "jsx": true
-    }
+    },
+    "requireConfigFile": false,
   },
   "env": {
     "es6":     true,
@@ -18,20 +22,26 @@
     "node":    true
   },
   "extends": [
-    "airbnb"
+    /*
+     * FIXME airbnb's standards have been set here since the Grails 1 branch, but were
+     * FIXME ignored: when properly enabled, eslint will flag a bit over 5,000 errors.
+     */
+    // "airbnb",
+    "eslint:recommended",
   ],
   "rules": {
-    "import/named": 2,
+    "import/named": "error",
     "jsx-a11y/anchor-is-valid": [ "error", {
       "components": [ "Link" ],
       "specialLink": [ "to", "hrefLeft", "hrefRight" ],
       "aspects": [ "noHref" ]
     }],
-    "jsx-a11y/label-has-for": [ 2, {
+    "jsx-a11y/label-has-for": [ "error", {
       "components": [ "Label" ],
       "required": "id",
       "allowChildren": false
     }],
+    "no-unused-vars": "off",
     "simple-import-sort/imports": [
       "error",
       {

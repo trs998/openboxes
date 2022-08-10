@@ -12,11 +12,13 @@ const GRAILS_VIEWS = path.resolve(__dirname, 'grails-app/views');
 const COMMON_VIEW = path.resolve(GRAILS_VIEWS, 'common');
 const RECEIVING_VIEW = path.resolve(GRAILS_VIEWS, 'partialReceiving');
 
+const ESLintPlugin = require('eslint-webpack-plugin');
 const FileManagerPlugin = require('filemanager-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const MomentLocalesPlugin = require('moment-locales-webpack-plugin');
 const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin');
+const ProgressPlugin = require('webpack').ProgressPlugin;
 
 module.exports = {
     entry: {
@@ -32,9 +34,15 @@ module.exports = {
       chunkFilename: 'bundle.[hash].[name].js',
     },
     stats: {
-      colors: true,
+      colors: false,
     },
     plugins: [
+      new ESLintPlugin({
+        exclude: `node_modules`,
+        extensions: [`js`, `jsx`],
+        fix: false,
+        threads: false,
+      }),
       new FileManagerPlugin({
         events: {
           onStart: {
@@ -77,6 +85,7 @@ module.exports = {
         localesToKeep: ['ar', 'de', 'en', 'es', 'fi', 'fr', 'it', 'pt', 'zh-cn'],
       }),
       new OptimizeCSSAssetsPlugin({}),
+      new ProgressPlugin(),
       new HtmlWebpackPlugin({
         filename: `${COMMON_VIEW}/_react.gsp`,
         template: `${ASSETS}/grails-template.html`,
@@ -107,14 +116,9 @@ module.exports = {
     module: {
       rules: [
         {
-          enforce: 'pre',
-          test: /\.jsx$/,
-          exclude: /node_modules/,
-          loader: 'eslint-loader',
-        },
-        {
           include: SRC,
           exclude: /node_modules/,
+          test: /\.jsx?$/,
           use: {
             loader: 'babel-loader',
             options: {
