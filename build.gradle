@@ -191,7 +191,7 @@ configurations {
                 }
 
                 if (details.requested.group == 'org.springframework') {
-                    if (VersionNumber.parse(details.requested.version).major == 4) {
+                    if (details.requested.version.tokenize('.')[0] == 4) {
                         details.because 'enforce consistent Spring versioning'
                         details.useVersion(springframeworkVersion)
                     }
