@@ -162,12 +162,12 @@ grails.project.dependency.resolution = {
         compile ":rendering:0.4.4"
         compile ":raven:0.5.8"
         runtime(':excel-import:0.3') { excludes 'poi-contrib', 'poi-scratchpad' }
-        runtime(':external-config-reload:1.4.0') { exclude 'spock-grails-support' }
+        // runtime(':external-config-reload:1.4.0') { exclude 'spock-grails-support' }
         runtime(':quartz2:2.1.6.2')
         compile(":csv:0.3.1")  // FIXME continue migrating to commons-csv instead
 
         // Unsure if used
-        runtime(':mail:1.0.6') { excludes 'mail', 'spring-test' }
+        // runtime(':mail:1.0.6') { excludes 'mail', 'release', 'spring-test', 'procupine' }
         runtime(':constraints:0.6.0')
         runtime(':jquery-validation:1.9') { // 1.7.3
             excludes 'constraints'
