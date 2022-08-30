@@ -132,6 +132,28 @@ class FormatTagLib {
     }
 
     /**
+     * Enclose `body` in a <td> element that will word-wrap only on spaces.
+     *
+     * TIL you can't (currently) ask CSS to do this directly. Its default
+     * word-wrapping behavior allows breaks at slashes and hyphens,
+     * which can make a mess of tabular output containing dates and ID's.
+     *
+     * If we enclose each words in a span that says "please don't wrap me",
+     * then join said spans with spaces, we get consistent behavior at the
+     * expense of somewhat unwieldy markup.
+     *
+     * https://developer.mozilla.org/en-US/docs/Web/CSS/white-space
+     * https://stackoverflow.com/questions/18136684/break-lines-by-whitespace-only
+     */
+    def td_spacewrap = { attrs, body ->
+        def contents = body() as String
+        def words = contents?.split()?.collect {
+            "<span style='display: inline-block; white-space: nowrap;'>${it}</span>"
+        }
+        out << '<td>' << words.join(' ') << '</td>'
+    }
+
+    /**
      * Custom tag to display warehouse metadata is a standard, localized manner
      *
      * Attributes:

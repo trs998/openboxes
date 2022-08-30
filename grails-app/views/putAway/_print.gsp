@@ -5,7 +5,6 @@
 <head>
     <style>
 
-        table {border-collapse: collapse; page-break-inside: auto;}
         thead {display: table-header-group;}
         tr {page-break-inside: avoid; page-break-after: auto;}
         td {vertical-align: top; }
@@ -44,6 +43,7 @@
         table {
             -fs-table-paginate: paginate;
             page-break-inside: avoid;
+            border: thin solid black;
             border-collapse: collapse;
             border-spacing: 0;
             margin: 5px;
@@ -69,9 +69,7 @@
         }
         table td, table th {
             padding: 5px;
-            border: 1px solid black;
-            word-wrap: break-word;
-            overflow-wrap:break-word;
+            border: thin solid black;
         }
     </style>
 
@@ -87,11 +85,11 @@
     </div>
 
     <div class="content">
-        <table>
+        <table style="white-space: nowrap;">
             <tr>
-                <td>
-                    <g:displayReportLogo/>
-                </td>
+                <th>
+                    <g:message code="putawayOrder.label" />
+                </th>
                 <td>
                     ${jsonObject?.putawayNumber}
                 </td>
@@ -110,42 +108,42 @@
             <thead>
                 <tr>
                     <th>Code</th>
-                    <th>Name</th>
+                    <th style="width: 100px;" >Name</th>
                     <th>Lot/Serial No.</th>
                     <th>Expiry</th>
-                    <th>Total Qty</th>
-                    <th>Putaway Quantity</th>
-                    <th>Preferred Bin</th>
-                    <th>Current Bins</th>
-                    <th>Putaway Bin</th>
+                    <th style="width: 30px;">Total Qty</th>
+                    <th style="width: 50px;">Putaway Quantity</th>
+                    <th style="width: 50px;">Preferred Bin</th>
+                    <th style="width: 70px;">Current Bins</th>
+                    <th style="width: 130px;">Putaway Bin</th>
                 </tr>
             </thead>
             <g:each var="putawayItem" in="${jsonObject.putawayItems}">
                 <g:if test="${putawayItem.splitItems.empty}">
                     <tr>
-                        <td>${putawayItem["product.productCode"]}</td>
-                        <td style="width: 100px;">${putawayItem["product.name"]}</td>
-                        <td>${putawayItem["inventoryItem.lotNumber"]}</td>
-                        <td>${putawayItem["inventoryItem.expirationDate"]}</td>
-                        <td style="width: 30px;">${putawayItem?.quantity}</td>
-                        <td style="width: 50px;">${putawayItem?.quantity}</td>
-                        <td style="width: 50px;">${(putawayItem["preferredBin.zoneName"] ? putawayItem["preferredBin.zoneName"] + ": " : '') + putawayItem["preferredBin.name"]}</td>
-                        <td style="width: 70px;">${putawayItem["currentBins"]}</td>
-                        <td style="width: 130px;">${(putawayItem["putawayLocation.zoneName"] ? putawayItem["putawayLocation.zoneName"] + ": " : '') + putawayItem["putawayLocation.name"]}</td>
+                        <format:td_spacewrap>${putawayItem["product.productCode"]}</format:td_spacewrap>
+                        <format:td_spacewrap>${putawayItem["product.name"]}</format:td_spacewrap>
+                        <format:td_spacewrap>${putawayItem["inventoryItem.lotNumber"]}</format:td_spacewrap>
+                        <format:td_spacewrap>${putawayItem["inventoryItem.expirationDate"]}</format:td_spacewrap>
+                        <format:td_spacewrap>${putawayItem?.quantity}</format:td_spacewrap>
+                        <format:td_spacewrap>${putawayItem?.quantity}</format:td_spacewrap>
+                        <format:td_spacewrap>${(putawayItem["preferredBin.zoneName"] ? putawayItem["preferredBin.zoneName"] + ": " : '') + putawayItem["preferredBin.name"]}</format:td_spacewrap>
+                        <format:td_spacewrap>${putawayItem["currentBins"]}</format:td_spacewrap>
+                        <format:td_spacewrap>${(putawayItem["putawayLocation.zoneName"] ? putawayItem["putawayLocation.zoneName"] + ": " : '') + putawayItem["putawayLocation.name"]}</format:td_spacewrap>
                     </tr>
                 </g:if>
                 <g:else>
                     <g:each var="splitItem" in="${putawayItem.splitItems}" status="status">
                         <tr>
-                            <td>${status==0 ? putawayItem["product.productCode"] : ""}</td>
-                            <td style="width: 100px;">${status==0 ? putawayItem["product.name"]: ""}</td>
-                            <td>${status==0 ? putawayItem["inventoryItem.lotNumber"]: ""}</td>
-                            <td>${status==0 ? putawayItem["inventoryItem.expirationDate"]: ""}</td>
-                            <td style="width: 30px;">${status==0 ? putawayItem?.quantity: ""}</td>
-                            <td style="width: 50px;">${splitItem["quantity"]?:""}</td>
-                            <td style="width: 50px;">${(putawayItem["preferredBin.zoneName"] ? putawayItem["preferredBin.zoneName"] + ": " : '') + putawayItem["preferredBin.name"]}</td>
-                            <td style="width: 70px;">${putawayItem["currentBins"]}</td>
-                            <td style="width: 130px;">${(splitItem["putawayLocation.zoneName"] ? splitItem["putawayLocation.zoneName"] + ": " : '') + splitItem["putawayLocation.name"]}</td>
+                            <format:td_spacewrap>${status==0 ? putawayItem["product.productCode"] : ""}</format:td_spacewrap>
+                            <format:td_spacewrap>${status==0 ? putawayItem["product.name"]: ""}</format:td_spacewrap>
+                            <format:td_spacewrap>${status==0 ? putawayItem["inventoryItem.lotNumber"]: ""}</format:td_spacewrap>
+                            <format:td_spacewrap>${status==0 ? putawayItem["inventoryItem.expirationDate"]: ""}</format:td_spacewrap>
+                            <format:td_spacewrap>${status==0 ? putawayItem?.quantity: ""}</format:td_spacewrap>
+                            <format:td_spacewrap>${splitItem["quantity"]?:""}</format:td_spacewrap>
+                            <format:td_spacewrap>${(putawayItem["preferredBin.zoneName"] ? putawayItem["preferredBin.zoneName"] + ": " : '') + putawayItem["preferredBin.name"]}</format:td_spacewrap>
+                            <format:td_spacewrap>${putawayItem["currentBins"]}</format:td_spacewrap>
+                            <format:td_spacewrap>${(splitItem["putawayLocation.zoneName"] ? splitItem["putawayLocation.zoneName"] + ": " : '') + splitItem["putawayLocation.name"]}</format:td_spacewrap>
                         </tr>
                     </g:each>
 
@@ -153,7 +151,9 @@
             </g:each>
         </table>
 
-        <table>
+        <br />
+
+        <table style="white-space: nowrap;">
             <tr>
                 <th><g:message code="putawayOrder.completedBy.label"/></th>
                 <td width="50%"></td>
