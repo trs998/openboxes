@@ -1,24 +1,17 @@
 package org.pih.warehouse.jobs
 
-import grails.core.GrailsApplication
 import org.quartz.DisallowConcurrentExecution
 import org.quartz.JobExecutionContext
 
 @DisallowConcurrentExecution
 class RefreshDemandDataJob {
 
-    GrailsApplication grailsApplication
+    def concurrent = false
     def reportService
-
-    static triggers = {
-        cron name: 'refreshDemandDataJobCronTrigger',
-                cronExpression: grailsApplication.getConfig().getProperty('openboxes.jobs.refreshDemandDataJob.cronExpression')
-    }
+    static triggers = JobUtils.getTriggers(RefreshDemandDataJob)
 
     def execute(JobExecutionContext context) {
-
-        Boolean enabled = grailsApplication.config.openboxes.jobs.refreshDemandDataJob.enabled
-        if (enabled) {
+        if (JobUtils.shouldExecute(RefreshDemandDataJob)) {
             def startTime = System.currentTimeMillis()
             log.info("Refreshing demand data: " + context.mergedJobDataMap)
             reportService.refreshProductDemandData()

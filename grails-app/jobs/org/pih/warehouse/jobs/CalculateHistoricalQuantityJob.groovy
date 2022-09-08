@@ -3,35 +3,20 @@ package org.pih.warehouse.jobs
 import grails.util.Holders
 import org.quartz.DisallowConcurrentExecution
 import org.quartz.JobExecutionContext
-import util.LiquibaseUtil
 
 @DisallowConcurrentExecution
 class CalculateHistoricalQuantityJob {
 
+    def concurrent = false
     static dates = []
     static enabled = true
     def inventorySnapshotService
-
-    // cron job needs to be triggered after the staging deployment
-    static triggers = {
-        cron name: 'calculateHistoricalQuantityCronTrigger',
-                cronExpression: Holders.getConfig().getProperty("openboxes.jobs.calculateHistoricalQuantityJob.cronExpression")
-    }
+    static triggers = JobUtils.getTriggers(CalculateHistoricalQuantityJob)
 
     def execute(JobExecutionContext context) {
 
-        Boolean enabled = Holders.getConfig().getProperty("openboxes.jobs.calculateHistoricalQuantityJob.enabled")
-        if (!enabled) {
-            return
-        }
+        if (JobUtils.shouldExecute(CalculateHistoricalQuantityJob)) {
 
-        if (LiquibaseUtil.isRunningMigrations()) {
-            log.info "Postponing job execution until liquibase migrations are complete"
-            return
-        }
-
-        enabled = Holders.getConfig().getProperty("openboxes.jobs.calculateHistoricalQuantityJob.enabled")
-        if (enabled) {
             log.info "Executing calculate historical quantity job at ${new Date()} with context ${context}"
             if (!dates) {
                 // Filter down to the transaction dates within the last 18 months
@@ -53,6 +38,4 @@ class CalculateHistoricalQuantityJob {
             inventorySnapshotService.populateInventorySnapshots(nextDate, Boolean.FALSE)
         }
     }
-
-
 }

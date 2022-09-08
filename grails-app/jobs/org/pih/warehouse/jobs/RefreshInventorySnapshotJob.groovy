@@ -10,12 +10,10 @@
 package org.pih.warehouse.jobs
 
 import grails.core.GrailsApplication
-import grails.util.Holders
 import org.pih.warehouse.core.Location
 import org.pih.warehouse.product.Product
 import org.quartz.DisallowConcurrentExecution
 import org.quartz.JobExecutionContext
-import org.quartz.JobExecutionException
 
 @DisallowConcurrentExecution
 class RefreshInventorySnapshotJob {
@@ -29,10 +27,8 @@ class RefreshInventorySnapshotJob {
 
     def execute(JobExecutionContext context) {
 
-        Boolean enabled = grailsApplication.config.openboxes.jobs.refreshInventorySnapshotJob.enabled
-        log.info("Refreshing inventory snapshots with data (enabled=${enabled}): " + context.mergedJobDataMap)
-        if (enabled) {
-
+        if (JobUtils.shouldExecute(RefreshInventorySnapshotJob)) {
+            log.info("Refreshing inventory snapshots with data: ${context.mergedJobDataMap}")
             def startTime = System.currentTimeMillis()
             def userId = context.mergedJobDataMap.get('user')
             def date = context.mergedJobDataMap.get('date')
