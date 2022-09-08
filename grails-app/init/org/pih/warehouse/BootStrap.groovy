@@ -458,7 +458,7 @@ class BootStrap {
         // Migrating existing data to the new data model is still a work in progress, but you can
         // use the previous versions changelogs.
         //
-        log.info("Running liquibase changelog(s) ...")
+        log.error("Running liquibase changelog(s) ...")
         Liquibase liquibase = null
         try {
 

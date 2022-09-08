@@ -18,7 +18,6 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const MomentLocalesPlugin = require('moment-locales-webpack-plugin');
 const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin');
-const ProgressPlugin = require('webpack').ProgressPlugin;
 
 module.exports = {
     entry: {
@@ -85,7 +84,6 @@ module.exports = {
         localesToKeep: ['ar', 'de', 'en', 'es', 'fi', 'fr', 'it', 'pt', 'zh-cn'],
       }),
       new OptimizeCSSAssetsPlugin({}),
-      new ProgressPlugin(),
       new HtmlWebpackPlugin({
         filename: `${COMMON_VIEW}/_react.gsp`,
         template: `${ASSETS}/grails-template.html`,
