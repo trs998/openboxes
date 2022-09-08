@@ -83,7 +83,7 @@ bootRun {
     addResources = true
     dependsOn = ['npmInstall', 'npm_run_bundle']
     jvmArgs = [
-        '-Dspring.output.ansi.enabled=always',
+        '-Dspring.output.ansi.enabled=detect',
         '-Xdebug',
         '-Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=5005'
     ]
