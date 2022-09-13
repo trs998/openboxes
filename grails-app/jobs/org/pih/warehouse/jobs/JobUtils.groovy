@@ -1,12 +1,14 @@
 package org.pih.warehouse.jobs
 
 import grails.util.Holders
-import groovy.util.logging.Slf4j
 import org.apache.commons.lang.WordUtils
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import util.LiquibaseUtil
 
-@Slf4j
 class JobUtils {
+
+    private static final transient Logger log = LoggerFactory.getLogger(JobUtils)
 
     private static String getKey(Class clazz) {
         return WordUtils.uncapitalize(clazz.name)
