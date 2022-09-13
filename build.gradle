@@ -582,8 +582,11 @@ dependencies {
     /*
      * Prevent 'Unable to start EmbeddedWebApplicationContext
      * due to missing EmbeddedServletContainerFactory bean.'
+     *
+     * Use `provided` per Grails 3's deployment guide, see
+     * http://docs.grails.org/3.3.16/guide/deployment.html
      */
-    compile 'org.springframework.boot:spring-boot-starter-web'
+    provided 'org.springframework.boot:spring-boot-starter-tomcat'
 
     // security patch
     compile 'org.yaml:snakeyaml:1.30'
