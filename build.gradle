@@ -92,12 +92,22 @@ bootRun {
 
 configurations {
     all {
-        // standardize on slf4j/logback
+        // route all logs through slf4j to logback
+        exclude group: 'ch.qos.reload4j'
         exclude group: 'commons-logging', module: 'commons-logging'
         exclude group: 'log4j', module: 'log4j'
         exclude group: 'org.apache.logging.log4j', module: 'log4j'
         exclude group: 'org.apache.logging.log4j', module: 'log4j-api'
         exclude group: 'org.apache.logging.log4j', module: 'log4j-1.2-api'
+
+        // moved to org.apache.avalon.framework
+        exclude group: 'avalon-framework'
+
+        // a superset of this is provided by org.jboss.spec.javax.transaction
+        exclude group: 'javax.transaction'
+
+        // obscure fork of Mozilla Rhino, abandoned in 2013
+        exclude group: 'ro.isdc.wro4j'
 
         // asset-pipeline has moved to com.bertramlabs.plugins
         exclude group: 'org.grails.plugins', module: 'asset-pipeline'
@@ -110,6 +120,16 @@ configurations {
              * version skew is to apply useVersion() on a group-wide basis.
              */
             eachDependency { DependencyResolveDetails details ->
+
+                if (details.requested.group == 'bouncycastle') {
+                    // e.g., bouncycastle:bctsp-jdk14:138 -> org.bouncycastle:bctsp-jdk14:1.38
+                    details.because 'enforce consistent bouncycastle sources'
+                    details.useTarget(
+                        group: 'org.bouncycastle',
+                        name: details.requested.name,
+                        version: bouncyCastleVersion
+                    )
+                }
 
                 if (details.requested.group == 'com.bertramlabs.plugins') {
                     details.because 'enforce consistent asset-pipeline versioning'
@@ -227,8 +247,10 @@ configurations {
             force 'org.apache.ant:ant-launcher:1.10.12'  // security patch
             force 'org.apache.commons:commons-lang3:3.12.0'  // security patch
             force 'org.apache.commons:commons-text:1.9'
+            force 'org.apache.xmlbeans:xmlbeans:3.1.0'  // security patch, build fixes
             force 'org.dom4j:dom4j:2.1.3'  // security patch
             force 'org.jboss.logging:jboss-logging:3.3.1.Final'  // security patch
+            force 'org.mozilla:rhino:1.7.14'
             force 'org.quartz-scheduler:quartz:2.3.2'
             force 'org.reactivestreams:reactive-streams:1.0.4'
             force 'xalan:serializer:2.7.2'  // security patch
@@ -336,21 +358,23 @@ dependencies {
 
     compile 'commons-lang:commons-lang:2.6'  // FIXME migrate to commons-lang3
 
-    compile "fr.opensagres.xdocreport:xdocreport:${xDocReportVersion}"
     implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.converter.docx.docx4j:${xDocReportVersion}"
+    implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.document:${xDocReportVersion}"
+    implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.template:${xDocReportVersion}"
 
     // FIXME assess which, if any, of these sub-dependencies are still needed
     // implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.converter:${xDocReportVersion}"
     // implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.converter.docx.xwpf:${xDocReportVersion}"
     // implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.converter.odt.odfdom:${xDocReportVersion}"
-    // implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.document:${xDocReportVersion}"
     // implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.document.docx:${xDocReportVersion}"
     // implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.document.odt:${xDocReportVersion}"
-    // implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.template:${xDocReportVersion}"
     // implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.template.freemarker:${xDocReportVersion}"
     // implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.template.velocity:${xDocReportVersion}"
 
     implementation 'fr.w3blog:zebra-zpl:0.0.3'  // ZebraUtils.printZpl(), Labelary API, etc.
+
+    // https://github.com/grails/grails-core/pull/10852#issuecomment-365960515
+    provided 'io.methvin:directory-watcher:0.16.1'
 
     /*
      * FIXME Used in only one place: ApiControllerFunctionalSpec.groovy.
@@ -362,6 +386,9 @@ dependencies {
     testCompile 'junit:junit:4.13.2'
 
     compile "mysql:mysql-connector-java:${mySqlConnectorVersion}"
+
+    // https://github.com/grails/grails-core/pull/10852#issuecomment-365960515
+    runtime 'net.java.dev.jna:jna:4.5.2'
 
     testRuntime "net.sourceforge.htmlunit:htmlunit:${htmlUnitVersion}"
 
