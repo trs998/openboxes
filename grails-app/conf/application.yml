@@ -50,6 +50,9 @@ spring:
         template:
             check-template-location: false
 
+newrelic:
+    enabled: true
+
 quartz:
     pluginEnabled: true
     jdbcStore: false
@@ -81,6 +84,8 @@ grails:
         minifyJs: false
         minifyCss: false
         bundle: false
+    cache:
+        clearAtStartup: true
     doc:
         title: "OpenBoxes"
         subtitle: ""
@@ -147,7 +152,7 @@ grails:
         encoding: UTF-8
     views:
         default:
-            codec: 'html'
+            codec: html
         enable:
             jsessionid: false
         gsp:
@@ -169,16 +174,19 @@ endpoints:
     jmx:
         unique-names: true
 
+org.eclipse.jetty.util.log.class: org.eclipse.jetty.util.log.Slf4jLog
+org.jboss.logging.provider: slf4j
+server.tomcat.accesslog.enabled: true
+slf4j.detectLoggerNameMismatch: true
+
 ---
 hibernate:
     cache:
         queries: false
-        provider_class: net.sf.ehcache.hibernate.EhCacheProvider
-        region:
-            factory_class: org.hibernate.cache.ehcache.EhCacheRegionFactory
-        use_query_cache: true
         use_second_level_cache: false
-
+        use_query_cache: false
+    connection:
+        provider_class=org.hibernate.connection.C3P0ConnectionProvider
 dataSource:
     pooled: true
     jmxExport: true
@@ -578,10 +586,6 @@ mail:
 
 uiperformance:
     enabled: false
-
-logging:
-    level:
-        org.apache.jasper.servlet.TldScanner.scanJars: DEBUG
 
 # TODO OBGM 1: Add jqueryValidation plugin config if will be needed
 # TODO OBGM 2: Add log4j plugin config if will be needed

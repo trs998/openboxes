@@ -6,5 +6,3 @@ grails.gorm.default.mapping = {
     '*'(cascadeValidate: 'none')
     id generator: 'uuid'
 }
-
-

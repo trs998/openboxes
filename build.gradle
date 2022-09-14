@@ -25,7 +25,6 @@ buildscript {
         classpath "com.bertramlabs.plugins:asset-pipeline-gradle:${assetPipelineVersion}"
         classpath "org.grails:grails-gradle-plugin:${grailsVersion}"
         classpath "org.grails.plugins:database-migration:${databaseMigrationVersion}"
-        classpath "org.grails.plugins:hibernate5:${gormVersion-'.RELEASE'}"
         classpath 'org.grails.plugins:views-gradle:1.3.0'
         classpath 'org.owasp:dependency-check-gradle:7.1.1'
     }
@@ -55,15 +54,20 @@ plugins {
     id 'com.virgo47.ClasspathJar' version '1.0.0'
 }
 
-apply plugin: 'asset-pipeline'  // enable `assets` block, but see deps below
-apply plugin: 'org.grails.grails-gsp'
+// prevent warfile issues by applying this before `asset-pipeline`. OBGM-353
 apply plugin: 'org.grails.grails-web'
-apply plugin: 'org.grails.plugins.views-json'
+
+apply plugin: 'asset-pipeline'  // enable `assets` block, but see deps below
+apply plugin: 'org.grails.plugins.views-json'  // .gson support
 apply plugin: 'org.owasp.dependencycheck'  // enable dependencyCheckAnalyze task
+
+// prevent warfile issues by applying this after `asset-pipeline`. OBGM-353
+apply plugin: 'org.grails.grails-gsp'
 
 group 'com.openboxes'
 mainClassName = 'org.pih.warehouse.Application'
 sourceCompatibility = 1.8
+targetCompatibility = 1.8
 version '0.9.0-SNAPSHOT'
 
 assetCompile.dependsOn(['npmInstall', 'npm_run_bundle'])
@@ -92,27 +96,30 @@ bootRun {
 
 configurations {
     all {
-        // route all logs through slf4j to logback
-        exclude group: 'ch.qos.reload4j'
-        exclude group: 'commons-logging', module: 'commons-logging'
-        exclude group: 'log4j', module: 'log4j'
-        exclude group: 'org.apache.logging.log4j', module: 'log4j'
-        exclude group: 'org.apache.logging.log4j', module: 'log4j-api'
-        exclude group: 'org.apache.logging.log4j', module: 'log4j-1.2-api'
 
-        // moved to org.apache.avalon.framework
-        exclude group: 'avalon-framework'
-
-        // a superset of this is provided by org.jboss.spec.javax.transaction
-        exclude group: 'javax.transaction'
-
-        // obscure fork of Mozilla Rhino, abandoned in 2013
-        exclude group: 'ro.isdc.wro4j'
-
-        // asset-pipeline has moved to com.bertramlabs.plugins
+        /*
+         * The `asset-pipeline` has moved to com.bertramlabs.plugins.
+         * Ignore requests for the out-of-date version.
+         * See https://github.com/bertramdev/asset-pipeline/issues/247#issuecomment-649594531
+         */
         exclude group: 'org.grails.plugins', module: 'asset-pipeline'
 
+        // relocated to `org.dom4j:dom4j` with Java 8 support
+        exclude group: 'dom4j', module: 'dom4j'
+
+        // jboss-transaction-api exposes a superset of this API
+        exclude group: 'javax.transaction', module: 'jta'
+
         resolutionStrategy {
+
+            /*
+             * Fail-fast if Gradle pulls in multiple versions of one
+             * dependency, which can cause deployment problems. Note,
+             * this won't differently-named modules that export the
+             * same API, which also can break the build. Fortunately,
+             * API collisions are less common than version collisions.
+             */
+            failOnVersionConflict()
 
             /*
              * A number of our dependencies comprise tightly coupled module
@@ -129,11 +136,6 @@ configurations {
                         name: details.requested.name,
                         version: bouncyCastleVersion
                     )
-                }
-
-                if (details.requested.group == 'com.bertramlabs.plugins') {
-                    details.because 'enforce consistent asset-pipeline versioning'
-                    details.useVersion(assetPipelineVersion)
                 }
 
                 if (details.requested.group == 'com.h2database') {
@@ -167,15 +169,8 @@ configurations {
                     details.useVersion(poiVersion)
                 }
 
-                if (details.requested.group.startsWith('org.apache.tomcat')) {
-                    if (details.requested.name != 'tomcat-embed-logging-log4j') {
-                        details.because 'enforce consistent Tomcat versioning'
-                        details.useVersion(tomcatVersion)
-                    }
-                }
-
                 if (details.requested.group == 'org.ow2.asm') {
-                    details.because 'enforce a Java-8 compatible ASM release'
+                    details.because 'enforce a consistent, Java-8 compatible ASM release'
                     details.useVersion(asmVersion)
                 }
 
@@ -214,15 +209,13 @@ configurations {
                 }
 
                 if (details.requested.group == 'org.springframework') {
-                    if (details.requested.version.tokenize('.')[0] == 4) {
+                    if (details.requested.version.tokenize('.')[0]
+                        == springframeworkVersion.tokenize('.')[0]) {
                         details.because 'enforce consistent Spring versioning'
                         details.useVersion(springframeworkVersion)
                     }
                 }
             }
-
-            // fail-fast if Gradle pulls in multiple versions of one dependency
-            failOnVersionConflict()
 
             /*
              * We can use `force` to ensure consistent sub-(sub-)dependency
@@ -231,17 +224,15 @@ configurations {
              * consume their API's directly.
              */
             force 'com.github.sommeri:less4j:1.17.2'
+            force 'com.google.code.findbugs:jsr305:3.0.2'
             force 'com.google.protobuf:protobuf-java:3.21.4'  // security patch
             force 'com.lowagie:itext:2.1.7'
             force 'commons-cli:commons-cli:1.5.0'
             force 'commons-fileupload:commons-fileupload:1.4'  // security patch
             force 'commons-io:commons-io:2.11.0'  // security patch
-            force 'commons-validator:commons-validator:1.7'
-            force 'javax.validation:validation-api:2.0.1.Final'
+            force "commons-logging:commons-logging:${slf4jProvidedCommonsLoggingVersion}"
+            force 'commons-validator:commons-validator:1.7'  // security patch
             force 'jline:jline:2.14.6'
-            force 'joda-time:joda-time:2.10.14'  // timezone fixes
-            force 'net.bytebuddy:byte-buddy:1.12.13'
-            force 'opensymphony:sitemesh:2.4.2'
             force 'org.antlr:antlr-runtime:3.5.3'
             force 'org.apache.ant:ant:1.10.12'  // security patch
             force 'org.apache.ant:ant-launcher:1.10.12'  // security patch
@@ -250,8 +241,7 @@ configurations {
             force 'org.apache.xmlbeans:xmlbeans:3.1.0'  // security patch, build fixes
             force 'org.dom4j:dom4j:2.1.3'  // security patch
             force 'org.jboss.logging:jboss-logging:3.3.1.Final'  // security patch
-            force 'org.mozilla:rhino:1.7.14'
-            force 'org.quartz-scheduler:quartz:2.3.2'
+            force 'org.quartz-scheduler:quartz:2.3.2'  // security patch
             force 'org.reactivestreams:reactive-streams:1.0.4'
             force 'xalan:serializer:2.7.2'  // security patch
             force 'xalan:xalan:2.7.2'  // security patch
@@ -319,14 +309,17 @@ dependencies {
     compile "ch.qos.logback:logback-classic:${logbackVersion}"
     compile "ch.qos.logback:logback-core:${logbackVersion}"
 
+    // log4j-over-slf4j exposes the same API as this fork of log4j 1.x does
+    provided "ch.qos.reload4j:reload4j:${slf4jProvidedReload4jVersion}"
+
     /*
      * Manage static assets in the grails-app/assets/ directory.
      *
      * See https://github.com/bertramdev/asset-pipeline#documentation-1
      */
-    runtime 'com.bertramlabs.plugins:asset-pipeline-grails'
-    assets 'com.bertramlabs.plugins:less-asset-pipeline'
-    assets 'com.bertramlabs.plugins:sass-asset-pipeline'
+    runtime "com.bertramlabs.plugins:asset-pipeline-grails:${assetPipelineVersion}"
+    assets "com.bertramlabs.plugins:less-asset-pipeline:${assetPipelineVersion}"
+    assets "com.bertramlabs.plugins:sass-asset-pipeline:${assetPipelineVersion}"
 
     // security patch
     assets 'com.google.code.gson:gson:2.8.9'
@@ -358,6 +351,9 @@ dependencies {
 
     compile 'commons-lang:commons-lang:2.6'  // FIXME migrate to commons-lang3
 
+    // jcl-over-slf4j exposes the same API as commons-logging
+    provided "commons-logging:commons-logging:${slf4jProvidedCommonsLoggingVersion}"
+
     implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.converter.docx.docx4j:${xDocReportVersion}"
     implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.document:${xDocReportVersion}"
     implementation "fr.opensagres.xdocreport:fr.opensagres.xdocreport.template:${xDocReportVersion}"
@@ -373,28 +369,43 @@ dependencies {
 
     implementation 'fr.w3blog:zebra-zpl:0.0.3'  // ZebraUtils.printZpl(), Labelary API, etc.
 
-    // https://github.com/grails/grails-core/pull/10852#issuecomment-365960515
-    provided 'io.methvin:directory-watcher:0.16.1'
-
     /*
      * FIXME Used in only one place: ApiControllerFunctionalSpec.groovy.
      * FIXME Use apache's httpclient instead.
      */
     testCompile 'io.micronaut:micronaut-http-client:1.0.0.RC3'
 
+    // these libraries are provided by both jetty and tomcat
+    provided 'javax.annotation:javax.annotation-api:1.3.2'
+    provided 'javax.el:javax.el-api:2.2.5'
+
+    /*
+     * This jar was last updated in 2008. The same API is provided by
+     * org.jboss.spec.javax.transaction:jboss-transaction-api_1.2_spec.
+     *
+     */
+    // provided 'javax.transaction:jta:1.1'
+
     assets 'junit:junit:4.13.2'
     testCompile 'junit:junit:4.13.2'
 
-    compile "mysql:mysql-connector-java:${mySqlConnectorVersion}"
+    // log4j-over-slf4j exposes the same API as log4j 1.x
+    provided "log4j:log4j:${slf4jProvidedLog4j1Version}"
 
-    // https://github.com/grails/grails-core/pull/10852#issuecomment-365960515
-    runtime 'net.java.dev.jna:jna:4.5.2'
+    compile "mysql:mysql-connector-java:${mySqlConnectorVersion}"
 
     testRuntime "net.sourceforge.htmlunit:htmlunit:${htmlUnitVersion}"
 
     implementation 'org.apache.commons:commons-csv:1.9.0'
     compile 'org.apache.commons:commons-email:1.5'
     implementation 'org.apache.httpcomponents:httpclient'
+
+    // log4j-to-slf4j exposes the same API as log4j 2.x
+    provided "org.apache.logging.log4j:log4j:${slf4jProvidedLog4j2Version}"
+    provided "org.apache.logging.log4j:log4j-api:${slf4jProvidedLog4j2Version}"
+
+    // log4j2 -> slf4j; cf. log4j-to-slf4j
+    compile "org.apache.logging.log4j:log4j-to-slf4j:${slf4jProvidedLog4j2Version}"
 
     implementation 'org.apache.poi:poi'
     implementation 'org.apache.poi:poi-scratchpad'
@@ -404,9 +415,17 @@ dependencies {
      *
      * See https://tomcat.apache.org/tomcat-7.0-doc/jdbc-pool.html
      *
+     * N.B. if spring boot doesn't find this, it will use hikariCP instead.
+     *
      * TODO do we need to specify an explicit version here?
      */
     runtime 'org.apache.tomcat:tomcat-jdbc'
+
+    // contents of this module are included in modern tomcat distributions
+    provided 'org.apache.tomcat.embed:tomcat-embed-logging-log4j:8.5.2'
+
+    // this library is provided by tomcat and emulated by jetty
+    provided "org.apache.tomcat:tomcat-juli:${minimumTomcatVersion}"
 
     // enable `import groovyx.gpars.GParsPool`, but consider grails-async-gpars?
     implementation 'org.codehaus.gpars:gpars:1.2.1'
@@ -421,7 +440,7 @@ dependencies {
     compile 'org.docx4j:docx4j:2.8.1'  // FIXME update to 8.3.x
 
     // required for GORM/hibernate validators
-    compile 'org.glassfish.web:javax.el:2.2.5'
+    compile 'org.glassfish.web:javax.el:2.2.6'
 
     // enable grails console web ui
     console 'org.grails:grails-console'
@@ -448,13 +467,18 @@ dependencies {
     compile 'org.grails:grails-plugin-services'
 
     /*
-    * Deprecated: use https://github.com/grails/grails-testing-support
-    *
-    * FIXME Refactor instances of, e.g., `import grails.test.mixin`.
-    *
-    * See https://testing.grails.org/latest/guide/index.html#upgrading
-    */
+     * Deprecated: use https://github.com/grails/grails-testing-support
+     *
+     * FIXME Refactor instances of, e.g., `import grails.test.mixin`.
+     *
+     * See https://testing.grails.org/latest/guide/index.html#upgrading
+     */
     testCompile('org.grails:grails-test-mixins:3.3.0') {
+        /*
+         * Old; relocated to `org.ow2.asm:asm`, which we pull in
+         * via `org.springframework.boot:spring-boot-starter-test`.
+         */
+        exclude group: 'asm', module: 'asm'
         // prevent requests for ancient versions of sub-dependencies
         exclude group: 'org.grails', module: 'grails-web-jsp'
         exclude group: 'org.objenesis', module: 'objenesis'
@@ -483,7 +507,13 @@ dependencies {
     implementation 'org.grails.plugins:async'
 
     // FIXME replace with com.google.zxing
-    implementation 'org.grails.plugins:barcode4j:0.3'
+    implementation('org.grails.plugins:barcode4j:0.3') {
+        /*
+         * Old; relocated to `org.apache.avalon.framework`, which we
+         * pull in transitively via `org.apache.xmlgraphics:fop`.
+         */
+        exclude group: 'avalon-framework'
+    }
 
     /*
      * Enable userAgentIdentService.isMobile() and <browser:is*> tags.
@@ -519,8 +549,11 @@ dependencies {
     // enable `import org.grails.plugins.web.taglib.*`
     compile 'org.grails.plugins:gsp'
 
-    // enable `import grails.orm, org.hibernate, org.springframework.orm`
-    compile "org.grails.plugins:hibernate5:${gormVersion}"
+    // prevent `No GORM implementations configured. Ensure GORM has been initialized correctly`
+    compile "org.grails.plugins:hibernate5:${gormVersion-'.RELEASE'}"
+
+    // use a release optimized for Grails 3.3.x for this `excel-import` sub-dependency
+    implementation 'org.grails.plugins:joda-time:2.1.0'
 
     /*
      * FIXME Configure this properly.
@@ -534,7 +567,10 @@ dependencies {
     compile 'org.grails.plugins:quartz:2.0.13'
 
     // list all scheduled jobs at e.g. http://localhost:8080/openboxes/quartz
-    implementation 'org.grails.plugins:quartz-monitor:1.3'
+    implementation('org.grails.plugins:quartz-monitor:1.3') {
+        // will pull in old asset-pipeline and quartz dependencies otherwise
+        transitive = false
+    }
 
     /*
      * FIXME Stop using grails.plugins.rendering.pdf.PdfRenderingService.
@@ -567,11 +603,10 @@ dependencies {
     profile 'org.grails.profiles:react-webpack'
 
     // enable `import org.hibernate.tool.schema.TargetType`, etc.
-    implementation 'org.hibernate:hibernate-c3p0'
-    compile 'org.hibernate:hibernate-core'
-    runtime 'org.hibernate:hibernate-ehcache'
-    implementation 'org.hibernate:hibernate-java8'
-    testImplementation 'org.hibernate:hibernate-testing'
+    compile "org.hibernate:hibernate-c3p0:${hibernateVersion}"
+    compile "org.hibernate:hibernate-core:${hibernateVersion}"
+    runtime "org.hibernate:hibernate-ehcache:${hibernateVersion}"
+    testImplementation "org.hibernate:hibernate-testing:${hibernateVersion}"
 
     // joda-time support for hibernate
     implementation 'org.jadira.usertype:usertype.jodatime:2.0.1'
@@ -591,27 +626,30 @@ dependencies {
     testRuntime 'org.seleniumhq.selenium:selenium-firefox-driver'
     testRuntime 'org.seleniumhq.selenium:selenium-safari-driver'
 
-    compile 'org.slf4j:jcl-over-slf4j'
-    compile 'org.slf4j:jul-to-slf4j'
-    compile 'org.slf4j:log4j-over-slf4j'
-    compile 'org.slf4j:slf4j-api'
+    implementation 'org.slf4j:jcl-over-slf4j'  // Apache/Jakarta Commons Logging -> slf4j
+    implementation 'org.slf4j:jul-to-slf4j'  // java.util.logging -> slf4j
+    implementation 'org.slf4j:log4j-over-slf4j'  // log4j1 -> slf4j; cf. log4j-to-slf4j
+    implementation 'org.slf4j:slf4j-api'  // slf4j itself
 
     // enable `import spock.lang.*`
     testCompile 'org.spockframework:spock-core:1.3-groovy-2.4'
     testCompile 'org.spockframework:spock-spring:1.3-groovy-2.4'
 
+    // enable `import org.springframework.orm.hibernate5.*`
+    implementation "org.springframework:spring-orm:${springframeworkVersion}"
+
     // may enable '/health' and '/info' endpoints
     compile 'org.springframework.boot:spring-boot-starter-actuator'
 
-    // set up Spring log framework (logback under the hood)
+    // set up Spring log framework (slf4j under the hood)
     compile 'org.springframework.boot:spring-boot-starter-logging'
 
     /*
-     * Prevent 'Unable to start EmbeddedWebApplicationContext
-     * due to missing EmbeddedServletContainerFactory bean.'
-     *
      * Use `provided` per Grails 3's deployment guide, see
      * http://docs.grails.org/3.3.16/guide/deployment.html
+     *
+     * This ticket has a good discussion of `provided` gotchas.
+     * https://github.com/grails/grails-core/issues/10483
      */
     provided 'org.springframework.boot:spring-boot-starter-tomcat'
 
