@@ -155,13 +155,6 @@ configurations {
                     details.useVersion(poiVersion)
                 }
 
-                if (details.requested.group.startsWith('org.apache.tomcat')) {
-                    if (details.requested.name != 'tomcat-embed-logging-log4j') {
-                        details.because 'enforce consistent Tomcat versioning'
-                        details.useVersion(tomcatVersion)
-                    }
-                }
-
                 if (details.requested.group == 'org.ow2.asm') {
                     details.because 'enforce a Java-8 compatible ASM release'
                     details.useVersion(asmVersion)
@@ -367,6 +360,11 @@ dependencies {
      */
     testCompile 'io.micronaut:micronaut-http-client:1.0.0.RC3'
 
+    // tomcat provides these libraries
+    provided 'javax.annotation:javax.annotation-api:1.3.2'
+    provided 'javax.el:javax.el-api:2.2.5'
+    provided "javax.servlet:javax.servlet-api:${servletVersion}"
+
     assets 'junit:junit:4.13.2'
     testCompile 'junit:junit:4.13.2'
 
@@ -392,6 +390,11 @@ dependencies {
      * TODO do we need to specify an explicit version here?
      */
     runtime 'org.apache.tomcat:tomcat-jdbc'
+
+    // this library is provided by tomcat
+    provided "org.apache.tomcat:tomcat-juli:${minimumTomcatVersion}"
+
+    provided "org.apache.tomcat:tomcat-servlet-api:${minimumTomcatVersion}"
 
     // contents of this module are included in modern tomcat distributions
     provided 'org.apache.tomcat.embed:tomcat-embed-logging-log4j:8.5.2'
@@ -597,10 +600,15 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-logging'
 
     /*
-     * Prevent 'Unable to start EmbeddedWebApplicationContext
-     * due to missing EmbeddedServletContainerFactory bean.'
+     * Use `provided` per Grails 3's deployment guide, see
+     * http://docs.grails.org/3.3.16/guide/deployment.html
+     *
+     * We don't support application servers other than Tomcat.
+     *
+     * This ticket has a good discussion of `provided` gotchas.
+     * https://github.com/grails/grails-core/issues/10483
      */
-    compile 'org.springframework.boot:spring-boot-starter-web'
+    provided 'org.springframework.boot:spring-boot-starter-tomcat'
 
     // security patch
     compile 'org.yaml:snakeyaml:1.30'
