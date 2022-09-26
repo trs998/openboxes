@@ -100,9 +100,12 @@ configurations {
         // log4j-over-slf4j exposes the same API as this fork of log4j 1.x does
         exclude group: 'ch.qos.reload4j', module: 'reload4j'
 
-        // use tomcat-jdbc instead of com.mchange.c3p0 or com.zaxxer.hikariCP
+        // use HikariCP instead of com.mchange.c3p0
         exclude group: 'com.mchange'
-        exclude group: 'com.zaxxer'
+
+        // superseded by com.zaxxer:HikariCP (Java 8+)
+        exclude group: 'com.zaxxer', module: 'HikariCP-java6'
+        exclude group: 'com.zaxxer', module: 'HikariCP-java7'
 
         // jcl-over-slf4j exposes the same API as commons-logging
         exclude group: 'commons-logging', module: 'commons-logging'
@@ -344,6 +347,9 @@ dependencies {
     // expose com.sun.mail.imap.IMAPStore to MailServiceTests
     testImplementation 'com.sun.mail:javax.mail:1.5.6'
 
+    // use HikariCP for JDBC pooling (instead of Tomcat or c3p0)
+    runtime "com.zaxxer:HikariCP:${hikariVersion}"
+
     assets 'commons-beanutils:commons-beanutils:1.9.4'
     compile 'commons-beanutils:commons-beanutils:1.9.4'
 
@@ -398,9 +404,6 @@ dependencies {
 
     implementation 'org.apache.poi:poi'
     implementation 'org.apache.poi:poi-scratchpad'
-
-    // tomcat native connection pooling
-    runtime "org.apache.tomcat:tomcat-jdbc:${minimumTomcatVersion}"
 
     // this library is provided by tomcat
     provided "org.apache.tomcat:tomcat-juli:${minimumTomcatVersion}"
@@ -595,6 +598,7 @@ dependencies {
     // enable `import org.hibernate.tool.schema.TargetType`, etc.
     compile "org.hibernate:hibernate-core:${hibernateVersion}"
     runtime "org.hibernate:hibernate-ehcache:${hibernateVersion}"
+    runtime "org.hibernate:hibernate-hikaricp:${hibernateVersion}"
     testImplementation "org.hibernate:hibernate-testing:${hibernateVersion}"
 
     // joda-time support for hibernate
