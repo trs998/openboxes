@@ -133,9 +133,9 @@ class ApiController {
         boolean isUserAdmin = userService.isUserAdmin(session?.user)
         def supportedActivities = location.supportedActivities ?: location.locationType.supportedActivities
         boolean isImpersonated = session.impersonateUserId ? true : false
-        def buildNumber = grailsApplication.metadata.getProperty('app.revisionNumber')?:''
-        def buildDate = grailsApplication.metadata.getProperty('app.buildDate')?:''
-        def branchName = grailsApplication.metadata.getProperty('app.branchName')?:''
+        def buildNumber = gitProperties?.shortCommitId
+        def buildDate = grailsApplication.metadata.getProperty('build.time')?:''
+        def branchName = gitProperties?.branch
         def grailsVersion = grailsApplication.metadata.getProperty('app.grails.version')?:''
         def appVersion = grailsApplication.metadata.getProperty('app.version')?:''
         def environment = Environment.current

@@ -85,7 +85,7 @@
                                     </label>
                                 </td>
                                 <td class="value">
-                                    <g:meta name="app.buildNumber"/>
+                                    ${gitProperties?.shortCommitId}
                                 </td>
                             </tr>
                             <tr class="prop">
@@ -95,7 +95,7 @@
                                     </label>
                                 </td>
                                 <td class="value">
-                                    <g:meta name="app.buildDate"/>
+                                    <g:meta name="build.time"/>
                                 </td>
                             </tr>
                             <tr class="prop">
@@ -105,7 +105,7 @@
                                     </label>
                                 </td>
                                 <td class="value">
-                                    <g:meta name="app.revisionNumber"/>
+                                    ${gitProperties?.branch} ${gitProperties?.shortCommitId}
                                 </td>
                             </tr>
                             <tr class="prop">

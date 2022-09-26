@@ -10,6 +10,8 @@
 
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import org.apache.commons.io.IOUtils
+import org.apache.commons.io.output.ByteArrayOutputStream
 
 buildscript {
     configurations.all {
@@ -341,6 +343,7 @@ sourceSets {
 }
 
 springBoot {
+    buildInfo()
     mainClass = 'org.pih.warehouse.Application'
 }
 
@@ -561,6 +564,9 @@ dependencies {
     // FIXME use commons-csv instead
     implementation 'org.grails.plugins:excel-import:3.0.2'
 
+    // Enable application.properties; see application.yml:grails.config.locations
+    implementation 'org.grails.plugins:external-config:1.4.0'
+
     // enable `import geb.*`
     testCompile 'org.grails.plugins:geb'
 
@@ -687,22 +693,38 @@ dependencies {
 }
 
 /*
- * Update `.../META-INF/grails.build.info` after any successful build.
+ * Create a grails.build.info file after every successful build, whose
+ * contents can be retrieved via <g:meta name='property.name' />.
+ *
+ * https://grails.org/blog/2017-04-02.html
  */
+buildProperties.dependsOn 'generateGitProperties'
 buildProperties.doLast {
-    File grailsBuildInfoFile = it.outputs.files.files.find {
-        it.name == 'grails.build.info'
-    }
-    if (!grailsBuildInfoFile) {
-        return  // nothing to do
-    }
 
     Map<String, String> env = System.getenv()
     Properties properties = new Properties()
-    grailsBuildInfoFile.withInputStream {
-        properties.load(it)
+
+    // copy gradle-git-properties's output to make it easier to access
+    File gradleGitPropertiesFile = new File("${project.rootDir}/build/resources/main/git.properties")
+    if (gradleGitPropertiesFile?.canRead()) {
+        gradleGitPropertiesFile.withInputStream {
+            properties.load(it)
+        }
     }
 
+    // load any information created by the build itself
+    File grailsBuildInfoFile = it.outputs.files.files.find { it.name == 'grails.build.info' }
+    if (grailsBuildInfoFile?.canRead()) {
+        grailsBuildInfoFile?.withInputStream {
+            properties.load(it)
+        }
+    }
+
+    properties.setProperty('app.context', '/openboxes')
+    properties.setProperty('app.name', 'openboxes')
+    properties.setProperty('app.version', getVersion())
+    properties.setProperty('app.grails.version', grailsVersion)
+    properties.setProperty('app.servlet.version', servletVersion)
     properties.setProperty('build.host', InetAddress.localHost.hostName)
     properties.setProperty('build.java.version', System.getProperty('java.version'))
     properties.setProperty('build.tag', env.BUILD_TAG ?: 'N/A')
@@ -715,8 +737,12 @@ buildProperties.doLast {
         properties.setProperty('build.number', env.bamboo_buildNumber)
     }
 
+    def unsortedOutput = new ByteArrayOutputStream()
+    properties.store(unsortedOutput, null)
+    def sortedLines = unsortedOutput.toString().split('\\r?\\n').sort()
+
     grailsBuildInfoFile.withOutputStream {
-        properties.store(it, null)
+        IOUtils.writeLines(Arrays.asList(sortedLines), '\n', it)
     }
 }
 

@@ -21,6 +21,7 @@ grails:
         failOnError: false
     config:
         locations:
+            - classpath:application.properties
             - ~/.grails/openboxes.yml
             - ~/.grails/openboxes.groovy
             - ~/.grails/openboxes.properties
