@@ -196,6 +196,7 @@ dataSource:
     pooled: true
     type: com.zaxxer.hikari.HikariDataSource
     properties:
+        # https://github.com/brettwooldridge/HikariCP#gear-configuration-knobs-baby
         connectionTimeout: 10000  # wait up to 10 seconds for a connection
         keepaliveTime: 30000  # 'ping' idle connections every 30 seconds
         maxLifetime: 900000  # retire and replace connections after 15 minutes
@@ -203,6 +204,19 @@ dataSource:
         # https://tomcat.apache.org/tomcat-8.5-doc/jdbc-pool.html#JDBC_interceptors
         jdbcInterceptors: "ConnectionState;StatementCache(max=200)"
         defaultTransactionIsolation: java.sql.Connection.TRANSACTION_READ_COMMITTED
+
+        dbProperties:
+            # from https://github.com/brettwooldridge/HikariCP/wiki/MySQL-Configuration
+            cachePrepStmts: true
+            cacheResultSetMetadata: true
+            cacheServerConfiguration: true
+            elideSetAutoCommits: true
+            maintainTimeStats: false
+            prepStmtCacheSize: 250
+            prepStmtCacheSqlLimit: 2048
+            rewriteBatchedStatements: true
+            useLocalSessionState: true
+            useServerPrepStmts: true
 
 environments:
     development:
