@@ -26,6 +26,14 @@ module.exports = {
     entry: {
       app: `${SRC}/index.jsx`,
     },
+    /*
+     * Update settings to match upcoming Webpack 5 changes.
+     * https://webpack.js.org/migrate/5/#test-webpack-5-compatibility
+     */
+    node: {
+      Buffer: false,
+      process: false,
+    },
     output: {
       path: TMP,
       filename: 'javascripts/bundle.[hash].js',
