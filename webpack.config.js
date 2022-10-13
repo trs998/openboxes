@@ -31,38 +31,40 @@ module.exports = {
     },
     plugins: [
       new FileManagerPlugin({
-        onStart: {
-          delete: [
-            `${JS_DEST}/bundle.**`,
-            `${CSS_DEST}/bundle.**`,
-            `${BUILD_ASSETS}/bundle.**`
-          ]
-        },
-        onEnd: [
-          {
-            copy: [
-              { source: `${DEST}/bundle.*.js`, destination: JS_DEST },
-              { source: `${DEST}/bundle.*.css`, destination: CSS_DEST },
-              { source: `${DEST}/*.eot`, destination: IMAGES_DEST },
-              { source: `${DEST}/*.svg`, destination: IMAGES_DEST },
-              { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
-              { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
-              { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
-              { source: `${DEST}/bundle.*.js`, destination: BUILD_ASSETS },
-              { source: `${DEST}/bundle.*.css`, destination: BUILD_ASSETS }
-            ],
-          },
-          {
+        events: {
+          onStart: {
             delete: [
-              `${DEST}/bundle.**`,
-              `${DEST}/*.eot`,
-              `${DEST}/*.svg`,
-              `${DEST}/*.woff2`,
-              `${DEST}/*.ttf`,
-              `${DEST}/*.woff`
+              `${JS_DEST}/bundle.**`,
+              `${CSS_DEST}/bundle.**`,
+              `${BUILD_ASSETS}/bundle.**`
             ]
-          }
-        ]
+          },
+          onEnd: [
+            {
+              copy: [
+                { source: `${DEST}/bundle.*.js`, destination: JS_DEST },
+                { source: `${DEST}/bundle.*.css`, destination: CSS_DEST },
+                { source: `${DEST}/*.eot`, destination: IMAGES_DEST },
+                { source: `${DEST}/*.svg`, destination: IMAGES_DEST },
+                { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
+                { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
+                { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
+                { source: `${DEST}/bundle.*.js`, destination: BUILD_ASSETS },
+                { source: `${DEST}/bundle.*.css`, destination: BUILD_ASSETS }
+              ],
+            },
+            {
+              delete: [
+                `${DEST}/bundle.**`,
+                `${DEST}/*.eot`,
+                `${DEST}/*.svg`,
+                `${DEST}/*.woff2`,
+                `${DEST}/*.ttf`,
+                `${DEST}/*.woff`
+              ]
+            }
+          ]
+        }
       }),
       new MiniCssExtractPlugin({
         filename: 'stylesheets/bundle.[hash].css',
