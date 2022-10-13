@@ -48,8 +48,8 @@ module.exports = {
               { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
               { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
               { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
-              { source: `${JS_DEST}/bundle.*.js`, destination: BUILD_ASSETS },
-              { source: `${CSS_DEST}/bundle.*.css`, destination: BUILD_ASSETS }
+              { source: `${DEST}/bundle.*.js`, destination: BUILD_ASSETS },
+              { source: `${DEST}/bundle.*.css`, destination: BUILD_ASSETS }
             ],
           },
           {
