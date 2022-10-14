@@ -85,11 +85,10 @@ grails:
     # http://www.asset-pipeline.com/manual/index.html#configuration
     # http://www.asset-pipeline.com/manual/index.html#configuration-2
     #
-    # N.B. the `bundle` parameter can only be set in application.yml.
+    # There is much common functionality between asset-pipeline and webpack,
+    # but webpack is a much richer tool, so, in general, we defer to it.
     #
     assets:
-        # bundle: false
-        # developmentRuntime: false
         enableDigests: false
         enableGzip: false
         maxThreads: 1

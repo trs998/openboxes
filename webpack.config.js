@@ -49,17 +49,23 @@ module.exports = {
             ]
           },
           onEnd: {
-            // move webpack's output to where asset-pipeline expects it
+            /*
+             * Copy webpack's output to where asset-pipeline expects it.
+             *
+             * Even though this is  a list, commands will execute in
+             * arbitrary order unless runTasksInSeries (above) is true.
+             * But it needn't be, and comes with a mild performance hit.
+             */
             copy: [
-              { source: `${TMP}/bundle*.js`, destination: JS_DEST },
               { source: `${TMP}/bundle*.css`, destination: CSS_DEST },
+              { source: `${TMP}/bundle*.js`, destination: JS_DEST },
               { source: `${TMP}/*.eot`, destination: IMAGES_DEST },
               { source: `${TMP}/*.svg`, destination: IMAGES_DEST },
-              { source: `${TMP}/*.woff2`, destination: IMAGES_DEST },
               { source: `${TMP}/*.ttf`, destination: IMAGES_DEST },
               { source: `${TMP}/*.woff`, destination: IMAGES_DEST },
-            ],
-          },
+              { source: `${TMP}/*.woff2`, destination: IMAGES_DEST },
+            ]
+          }
         }
       }),
       new MiniCssExtractPlugin({
