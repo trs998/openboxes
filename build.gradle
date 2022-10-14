@@ -83,8 +83,6 @@ sourceCompatibility = 1.8
 targetCompatibility = 1.8
 version '0.9.0-SNAPSHOT'
 
-assetCompile.dependsOn('npm_run_bundle')
-
 /*
  * From the asset-pipeline manual, "If you want settings to apply to
  * both development runtime and build time the properties have to be
@@ -96,6 +94,7 @@ assetCompile.dependsOn('npm_run_bundle')
  * There is much common functionality between asset-pipeline and webpack,
  * but webpack is a much richer tool, so, in general, we defer to it.
  */
+assetCompile.dependsOn 'npm_run_bundle'
 assets {
     enableDigests = false
     enableGzip = false
@@ -281,7 +280,7 @@ configurations {
     }
 }
 
-dependencyCheckAnalyze.dependsOn('npm_run_bundle')
+dependencyCheckAnalyze.dependsOn 'npm_run_bundle'
 dependencyCheck {
     analyzers {
         assemblyEnabled = false
