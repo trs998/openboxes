@@ -1,10 +1,13 @@
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, 'src');
 const SRC = path.resolve(ROOT, 'js');
-const TMP = fs.mkdtemp(path.resolve(__dirname, 'build/tmp/webpack'));
+const TMP = fs.mkdtempSync(
+  fs.mkdirSync(path.resolve(__dirname, 'build/tmp/webpack') + path.sep, {
+    recursive: true
+  })
+);
 const BUILD_ASSETS = path.resolve(__dirname, 'build/assets');
 const ASSETS = path.resolve(ROOT, 'assets');
 const JS_DEST = path.resolve(__dirname, 'grails-app/assets/javascripts');
