@@ -22,9 +22,10 @@ module.exports = {
       app: `${SRC}/index.jsx`,
     },
     output: {
-      path: DEST,
-      filename: 'javascripts/bundle.[hash].js',
       chunkFilename: 'bundle.[hash].[name].js',
+      filename: 'javascripts/bundle.[hash].js',
+      path: DEST,
+      publicPath: '/assets/',
     },
     stats: {
       colors: false,
@@ -34,28 +35,27 @@ module.exports = {
         events: {
           onStart: {
             delete: [
-              `${JS_DEST}/bundle.**`,
-              `${CSS_DEST}/bundle.**`,
-              `${BUILD_ASSETS}/bundle.**`
+              `${JS_DEST}/bundle.*`,
+              `${CSS_DEST}/bundle.*`,
+              BUILD_ASSETS
             ]
           },
           onEnd: [
             {
               copy: [
-                { source: `${DEST}/bundle.*.js`, destination: JS_DEST },
-                { source: `${DEST}/bundle.*.css`, destination: CSS_DEST },
+                { source: `${DEST}/bundle*.js`, destination: JS_DEST },
+                { source: `${DEST}/bundle*.css`, destination: CSS_DEST },
                 { source: `${DEST}/*.eot`, destination: IMAGES_DEST },
                 { source: `${DEST}/*.svg`, destination: IMAGES_DEST },
                 { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
                 { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
                 { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
-                { source: `${DEST}/bundle.*.js`, destination: BUILD_ASSETS },
-                { source: `${DEST}/bundle.*.css`, destination: BUILD_ASSETS }
+                { source: `${DEST}/bundle*`, destination: BUILD_ASSETS }
               ],
             },
             {
               delete: [
-                `${DEST}/bundle.**`,
+                `${DEST}/bundle*`,
                 `${DEST}/*.eot`,
                 `${DEST}/*.svg`,
                 `${DEST}/*.woff2`,
