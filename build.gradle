@@ -25,44 +25,57 @@ buildscript {
         classpath "com.bertramlabs.plugins:asset-pipeline-gradle:${assetPipelineVersion}"
         classpath "org.grails:grails-gradle-plugin:${grailsVersion}"
         classpath "org.grails.plugins:database-migration:${databaseMigrationVersion}"
-        classpath 'org.owasp:dependency-check-gradle:7.2.1'
-        // classpath "org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}"
+        classpath "org.grails.plugins:views-gradle:${grailsViewsVersion}"
+        classpath "org.owasp:dependency-check-gradle:${owaspVersion}"
     }
     repositories {
         mavenCentral()
-        // maven { url 'https://plugins.gradle.org/m2/' }
         maven { url 'https://repo.grails.org/grails/core' }
     }
 }
 
 plugins {
+    // enable the top-level `mainClassName` field
+    id 'application'
+
+    id 'eclipse'
+    id 'groovy'
+    id 'idea'
+
+    // expose `pom` object, https://docs.gradle.org/4.10.3/userguide/maven_plugin.html
+    id 'maven'
+
+    // enable `grails gradle dependencyReport`, etc.
+    id 'project-report'
+
+    id 'war'
+
     // git magic, but releases past v2.3.0 require Gradle 5.1+
     id 'com.gorylenko.gradle-git-properties' version '2.2.4'
 
-    // enable `npmInstall` target, as well as the `node` block below
+    // enable `npmInstall` and `npm_run_*` targets, and the `node` block below
     id 'com.moowork.node' version '1.3.1'
 
     // resolve a Windows-specific build issue
     id 'com.virgo47.ClasspathJar' version '1.0.0'
 }
 
-apply plugin: 'application'
-// apply plugin: 'eclipse'
-apply plugin: 'idea'
-// apply plugin: 'io.spring.dependency-management'
-// apply plugin: 'org.springframework.boot'
-// id 'maven'  // used by writePom task, below
-// id 'project-report'
-apply plugin: 'war'
-
 // prevent warfile issues by applying this before `asset-pipeline`. OBGM-353
 apply plugin: 'org.grails.grails-web'
 
 apply plugin: 'asset-pipeline'  // enable `assets` block, but see deps below
-//apply plugin: 'org.owasp.dependencycheck'  // enable dependencyCheckAnalyze task
 
 // prevent warfile issues by applying this after `asset-pipeline`. OBGM-353
 apply plugin: 'org.grails.grails-gsp'
+
+/*
+ * Documentation says this must load after the core gradle plugins.
+ * http://views.grails.org/latest/#_installation
+ */
+apply plugin: 'org.grails.plugins.views-json'
+
+// enable `grails gradle dependencyCheckAnalyze` (security checker)
+apply plugin: 'org.owasp.dependencycheck'
 
 group 'com.openboxes'
 mainClassName = 'org.pih.warehouse.Application'
@@ -70,7 +83,7 @@ sourceCompatibility = 1.8
 targetCompatibility = 1.8
 version '0.9.0-SNAPSHOT'
 
-assetCompile.dependsOn(['npmInstall', 'npm_run_bundle'])
+assetCompile.dependsOn('npm_run_bundle')
 
 /*
  * From the asset-pipeline manual, "If you want settings to apply to
@@ -83,26 +96,20 @@ assetCompile.dependsOn(['npmInstall', 'npm_run_bundle'])
  * N.B. the `bundle` parameter can only be set in application.yml.
  */
 assets {
-//    excludes = [
-//        '**/bundle*.css',
-//        '**/bundle*.js',
-//    ]
-    developmentRuntime = false
+    // developmentRuntime = false
     enableDigests = false
     enableGzip = false
     maxThreads = 1
-    minifyJs = false
-    minifyCss = false
+    minifyJs = false  // defer to webpack
+    minifyCss = false  // defer to webpack
     minifyOptions = [
-        languageMode: 'ES6',
-//         optimizationLevel: 'SIMPLE',
-//         targetLanguage: 'ES5',
+        languageMode: 'ES6'
     ]
 }
 
 bootRun {
     addResources = true
-    dependsOn = ['npmInstall', 'npm_run_bundle']
+    dependsOn = [ 'npm_run_bundle' ]
     jvmArgs = [
         '-Dspring.output.ansi.enabled=never',
         '-Xdebug',
@@ -274,24 +281,24 @@ configurations {
     }
 }
 
-//dependencyCheckAnalyze.dependsOn(['npmInstall', 'npm_run_bundle'])
-//dependencyCheck {
-//    analyzers {
-//        assemblyEnabled = false
-//        nodeAudit {
-//            enabled = true
-//            skipDevDependencies = true
-//            yarnEnabled = false  // we use npm exclusively
-//        }
-//        retirejs.enabled = true
-//    }
-//
-//    autoUpdate = true
-//    failBuildOnCVSS = 11
-//    format = 'ALL'
-//    junitFailOnCVSS = 11
-//    skipTestGroups = true
-//}
+dependencyCheckAnalyze.dependsOn('npm_run_bundle')
+dependencyCheck {
+    analyzers {
+        assemblyEnabled = false
+        nodeAudit {
+            enabled = true
+            skipDevDependencies = true
+            yarnEnabled = false  // we use npm exclusively
+        }
+        retirejs.enabled = true
+    }
+
+    autoUpdate = true
+    failBuildOnCVSS = 11
+    format = 'ALL'
+    junitFailOnCVSS = 11
+    skipTestGroups = true
+}
 
 node {
     distBaseUrl = 'https://nodejs.org/dist'
@@ -340,7 +347,6 @@ dependencies {
      * See https://github.com/bertramdev/asset-pipeline#documentation-1
      */
     runtime "com.bertramlabs.plugins:asset-pipeline-grails:${assetPipelineVersion}"
-    //compile "com.bertramlabs.plugins:asset-pipeline-grails:${assetPipelineVersion}"
 
     // security patch
     compile 'com.google.code.gson:gson:2.8.9'

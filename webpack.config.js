@@ -32,6 +32,7 @@ module.exports = {
     },
     plugins: [
       new FileManagerPlugin({
+        runTasksInSeries: false,
         events: {
           onStart: {
             delete: [
@@ -50,7 +51,6 @@ module.exports = {
                 { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
                 { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
                 { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
-                //{ source: `${DEST}/bundle*`, destination: BUILD_ASSETS }
               ],
             },
             {

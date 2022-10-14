@@ -88,19 +88,15 @@ grails:
     # N.B. the `bundle` parameter can only be set in application.yml.
     #
     assets:
-        bundle: false
-        developmentRuntime: false
+        # bundle: false
+        # developmentRuntime: false
         enableDigests: false
         enableGzip: false
         maxThreads: 1
-        minifyCss: false
-        minifyJs: false
+        minifyCss: false  # defer to webpack
+        minifyJs: false  # defer to webpack
         minifyOptions:
             - languageMode: 'ES6'
-
-#        excludes:
-#            - '**/bundle*.css'
-#            - '**/bundle*.js'
     cache:
         clearAtStartup: true
     doc:
