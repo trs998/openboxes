@@ -58,7 +58,6 @@ plugins {
 apply plugin: 'org.grails.grails-web'
 
 apply plugin: 'asset-pipeline'  // enable `assets` block, but see deps below
-apply plugin: 'org.grails.plugins.views-json'  // .gson support
 apply plugin: 'org.owasp.dependencycheck'  // enable dependencyCheckAnalyze task
 
 // prevent warfile issues by applying this after `asset-pipeline`. OBGM-353
@@ -72,10 +71,14 @@ version '0.9.0-SNAPSHOT'
 
 assetCompile.dependsOn(['npmInstall', 'npm_run_bundle'])
 assets {
-    excludes = [
-        '**/bundle.*.css',
-        '**/bundle.*.js',
-    ]
+//    excludes = [
+//        '**/bundle.*.css',
+//        '**/bundle.*.js',
+//    ]
+    enableDigests = false
+    enableGzip = false
+    minifyJs = false
+    minifyCss = false
     minifyOptions = [
         languageMode: 'ES6',
         optimizationLevel: 'SIMPLE',

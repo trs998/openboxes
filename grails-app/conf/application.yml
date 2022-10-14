@@ -81,6 +81,10 @@ grails:
         minifyJs: false
         minifyCss: false
         bundle: false
+        mapping: '/static/assets'
+#        excludes:
+#            - '**/bundle.*.css'
+#            - '**/bundle.*.js'
     cache:
         clearAtStartup: true
     doc:
