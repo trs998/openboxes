@@ -25,7 +25,7 @@ module.exports = {
       chunkFilename: 'bundle.[hash].[name].js',
       filename: 'javascripts/bundle.[hash].js',
       path: DEST,
-      publicPath: '/assets/',
+      publicPath: '/openboxes/assets/',
     },
     stats: {
       colors: false,
@@ -50,7 +50,7 @@ module.exports = {
                 { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
                 { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
                 { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
-                { source: `${DEST}/bundle*`, destination: BUILD_ASSETS }
+                //{ source: `${DEST}/bundle*`, destination: BUILD_ASSETS }
               ],
             },
             {
@@ -108,7 +108,7 @@ module.exports = {
         },
         {
           test: /\.jsx$/,
-          use: ['cache-loader', 'babel-loader?presets[]=es2015&presets[]=react&presets[]=stage-1'],
+          use: ['babel-loader?presets[]=es2015&presets[]=react&presets[]=stage-1'],
           include: SRC,
           exclude: /node_modules/,
         },

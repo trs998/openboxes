@@ -25,25 +25,17 @@ buildscript {
         classpath "com.bertramlabs.plugins:asset-pipeline-gradle:${assetPipelineVersion}"
         classpath "org.grails:grails-gradle-plugin:${grailsVersion}"
         classpath "org.grails.plugins:database-migration:${databaseMigrationVersion}"
-        classpath 'org.grails.plugins:views-gradle:1.3.0'
         classpath 'org.owasp:dependency-check-gradle:7.2.1'
+        // classpath "org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}"
     }
     repositories {
         mavenCentral()
+        // maven { url 'https://plugins.gradle.org/m2/' }
         maven { url 'https://repo.grails.org/grails/core' }
     }
 }
 
 plugins {
-
-    id 'application'
-    id 'eclipse'
-    id 'groovy'
-    id 'idea'
-    id 'maven'
-    id 'project-report'
-    id 'war'
-
     // git magic, but releases past v2.3.0 require Gradle 5.1+
     id 'com.gorylenko.gradle-git-properties' version '2.2.4'
 
@@ -54,11 +46,20 @@ plugins {
     id 'com.virgo47.ClasspathJar' version '1.0.0'
 }
 
+apply plugin: 'application'
+// apply plugin: 'eclipse'
+apply plugin: 'idea'
+// apply plugin: 'io.spring.dependency-management'
+// apply plugin: 'org.springframework.boot'
+// id 'maven'  // used by writePom task, below
+// id 'project-report'
+apply plugin: 'war'
+
 // prevent warfile issues by applying this before `asset-pipeline`. OBGM-353
 apply plugin: 'org.grails.grails-web'
 
 apply plugin: 'asset-pipeline'  // enable `assets` block, but see deps below
-apply plugin: 'org.owasp.dependencycheck'  // enable dependencyCheckAnalyze task
+//apply plugin: 'org.owasp.dependencycheck'  // enable dependencyCheckAnalyze task
 
 // prevent warfile issues by applying this after `asset-pipeline`. OBGM-353
 apply plugin: 'org.grails.grails-gsp'
@@ -70,19 +71,32 @@ targetCompatibility = 1.8
 version '0.9.0-SNAPSHOT'
 
 assetCompile.dependsOn(['npmInstall', 'npm_run_bundle'])
+
+/*
+ * From the asset-pipeline manual, "If you want settings to apply to
+ * both development runtime and build time the properties have to be
+ * duplicated in your application's application.yml [and build.gradle]."
+ *
+ * http://www.asset-pipeline.com/manual/index.html#configuration
+ * http://www.asset-pipeline.com/manual/index.html#configuration-2
+ *
+ * N.B. the `bundle` parameter can only be set in application.yml.
+ */
 assets {
 //    excludes = [
-//        '**/bundle.*.css',
-//        '**/bundle.*.js',
+//        '**/bundle*.css',
+//        '**/bundle*.js',
 //    ]
+    developmentRuntime = false
     enableDigests = false
     enableGzip = false
+    maxThreads = 1
     minifyJs = false
     minifyCss = false
     minifyOptions = [
         languageMode: 'ES6',
-        optimizationLevel: 'SIMPLE',
-        targetLanguage: 'ES5',
+//         optimizationLevel: 'SIMPLE',
+//         targetLanguage: 'ES5',
     ]
 }
 
@@ -260,24 +274,24 @@ configurations {
     }
 }
 
-dependencyCheckAnalyze.dependsOn(['npmInstall', 'npm_run_bundle'])
-dependencyCheck {
-    analyzers {
-        assemblyEnabled = false
-        nodeAudit {
-            enabled = true
-            skipDevDependencies = true
-            yarnEnabled = false  // we use npm exclusively
-        }
-        retirejs.enabled = true
-    }
-
-    autoUpdate = true
-    failBuildOnCVSS = 11
-    format = 'ALL'
-    junitFailOnCVSS = 11
-    skipTestGroups = true
-}
+//dependencyCheckAnalyze.dependsOn(['npmInstall', 'npm_run_bundle'])
+//dependencyCheck {
+//    analyzers {
+//        assemblyEnabled = false
+//        nodeAudit {
+//            enabled = true
+//            skipDevDependencies = true
+//            yarnEnabled = false  // we use npm exclusively
+//        }
+//        retirejs.enabled = true
+//    }
+//
+//    autoUpdate = true
+//    failBuildOnCVSS = 11
+//    format = 'ALL'
+//    junitFailOnCVSS = 11
+//    skipTestGroups = true
+//}
 
 node {
     distBaseUrl = 'https://nodejs.org/dist'
@@ -326,11 +340,9 @@ dependencies {
      * See https://github.com/bertramdev/asset-pipeline#documentation-1
      */
     runtime "com.bertramlabs.plugins:asset-pipeline-grails:${assetPipelineVersion}"
-    assets "com.bertramlabs.plugins:less-asset-pipeline:${assetPipelineVersion}"
-    assets "com.bertramlabs.plugins:sass-asset-pipeline:${assetPipelineVersion}"
+    //compile "com.bertramlabs.plugins:asset-pipeline-grails:${assetPipelineVersion}"
 
     // security patch
-    assets 'com.google.code.gson:gson:2.8.9'
     compile 'com.google.code.gson:gson:2.8.9'
 
     // expose javax.annotation.Nullable, com.google.common.base.Enums, etc.
@@ -343,7 +355,6 @@ dependencies {
     // expose com.sun.mail.imap.IMAPStore to MailServiceTests
     testImplementation 'com.sun.mail:javax.mail:1.5.6'
 
-    assets 'commons-beanutils:commons-beanutils:1.9.4'
     compile 'commons-beanutils:commons-beanutils:1.9.4'
 
     compile 'commons-codec:commons-codec:1.15'
@@ -385,7 +396,6 @@ dependencies {
     provided "javax.servlet.jsp:javax.servlet.jsp-api:${jspVersion}"
     provided "javax.websocket:javax.websocket-api:${websocketVersion}"
 
-    assets 'junit:junit:4.13.2'
     testCompile 'junit:junit:4.13.2'
 
     compile "mysql:mysql-connector-java:${mySqlConnectorVersion}"
