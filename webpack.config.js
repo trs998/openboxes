@@ -47,7 +47,6 @@ module.exports = {
               `${JS_DEST}/bundle.*`,
               `${CSS_DEST}/bundle.*`,
               BUILD_ASSETS,
-              WORK_DIR
             ]
           },
           onEnd: [
