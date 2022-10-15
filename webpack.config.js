@@ -41,14 +41,10 @@ module.exports = {
       new FileManagerPlugin({
         events: {
           onStart: {
-            /*
-             * FIXME We could simplify this if there were some way to
-             * FIXME say "remove everything not under source control."
-             */
             delete: [
-              // remove any previous asset-pipeline output
+              // remove previous asset-pipeline output
               BUILD_ASSETS,
-              // remove any previous FileManagerPlugin output
+              // remove previous FileManagerPlugin output
               `${CSS_DEST}/bundle.*`,
               `${JS_DEST}/bundle.*`,
             ],
