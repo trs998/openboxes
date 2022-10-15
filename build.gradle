@@ -69,7 +69,7 @@ apply plugin: 'asset-pipeline'  // enable `assets` block, but see deps below
 apply plugin: 'org.grails.grails-gsp'
 
 /*
- * Documentation says this must load after the core gradle plugins.
+ * This plugin must load *after* the core grails/gradle plugins.
  * http://views.grails.org/latest/#_installation
  */
 apply plugin: 'org.grails.plugins.views-json'
@@ -84,15 +84,12 @@ targetCompatibility = 1.8
 version '0.9.0-SNAPSHOT'
 
 /*
- * From the asset-pipeline manual, "If you want settings to apply to
+ * From the asset-pipeline manual: "If you want settings to apply to
  * both development runtime and build time the properties have to be
  * duplicated in your application's application.yml [and build.gradle]."
  *
  * http://www.asset-pipeline.com/manual/index.html#configuration
  * http://www.asset-pipeline.com/manual/index.html#configuration-2
- *
- * There is much common functionality between asset-pipeline and webpack,
- * but webpack is a much richer tool, so, in general, we defer to it.
  */
 assetCompile.dependsOn 'npm_run_bundle'
 assets {
@@ -108,7 +105,7 @@ assets {
 
 bootRun {
     addResources = true
-    dependsOn = [ 'npm_run_bundle' ]
+    dependsOn 'npm_run_bundle'
     jvmArgs = [
         '-Dspring.output.ansi.enabled=never',
         '-Xdebug',

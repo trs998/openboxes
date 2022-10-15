@@ -30,26 +30,34 @@ module.exports = {
       process: false,
     },
     output: {
-      chunkFilename: 'bundle.[hash].[name].js',
-      filename: 'javascripts/bundle.[hash].js',
       path: DEST,
+      filename: 'javascripts/bundle.[hash].js',
+      chunkFilename: 'bundle.[hash].[name].js',
     },
     stats: {
       colors: false,
     },
     plugins: [
       new FileManagerPlugin({
-        runTasksInSeries: false,
         events: {
           onStart: {
+            /*
+             * FIXME We could simplify this if there were some way to
+             * FIXME say "remove everything not under source control."
+             */
             delete: [
-              `${JS_DEST}/bundle.*`,
-              `${CSS_DEST}/bundle.*`,
+              // remove any previous asset-pipeline output
               BUILD_ASSETS,
+              // remove any previous FileManagerPlugin output
+              `${CSS_DEST}/bundle.*`,
+              `${JS_DEST}/bundle.*`,
+              // remove any previous webpack output
+              WORK_DIR,
             ],
           },
           onEnd: [
             {
+              // N.B. despite being in a list, these execute in arbitrary order
               copy: [
                 { source: `${DEST}/bundle*.js`, destination: JS_DEST },
                 { source: `${DEST}/bundle*.css`, destination: CSS_DEST },

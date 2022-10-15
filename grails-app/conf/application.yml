@@ -78,15 +78,12 @@ server:
 ---
 grails:
     #
-    # From the asset-pipeline manual, "If you want settings to apply to
+    # From the asset-pipeline manual: "If you want settings to apply to
     # both development runtime and build time the properties have to be
     # duplicated in your application's application.yml [and build.gradle]."
     #
     # http://www.asset-pipeline.com/manual/index.html#configuration
     # http://www.asset-pipeline.com/manual/index.html#configuration-2
-    #
-    # There is much common functionality between asset-pipeline and webpack,
-    # but webpack is a much richer tool, so, in general, we defer to it.
     #
     assets:
         enableDigests: false
