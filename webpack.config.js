@@ -2,7 +2,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, 'src');
 const SRC = path.resolve(ROOT, 'js');
-const DEST = path.resolve(__dirname, 'grails-app/assets');
+const WORK_DIR = path.resolve(__dirname, 'build/tmp/webpack');
 const BUILD_ASSETS = path.resolve(__dirname, 'build/assets');
 const ASSETS = path.resolve(ROOT, 'assets');
 const JS_DEST = path.resolve(__dirname, 'grails-app/assets/javascripts');
@@ -32,8 +32,8 @@ module.exports = {
     output: {
       chunkFilename: 'bundle.[hash].[name].js',
       filename: 'javascripts/bundle.[hash].js',
-      path: DEST,
-      publicPath: '/openboxes/assets/',
+      path: WORK_DIR,
+      publicPath: '/assets',
     },
     stats: {
       colors: false,
@@ -46,30 +46,21 @@ module.exports = {
             delete: [
               `${JS_DEST}/bundle.*`,
               `${CSS_DEST}/bundle.*`,
-              BUILD_ASSETS
+              BUILD_ASSETS,
+              WORK_DIR
             ]
           },
           onEnd: [
             {
               copy: [
-                { source: `${DEST}/bundle*.js`, destination: JS_DEST },
-                { source: `${DEST}/bundle*.css`, destination: CSS_DEST },
-                { source: `${DEST}/*.eot`, destination: IMAGES_DEST },
-                { source: `${DEST}/*.svg`, destination: IMAGES_DEST },
-                { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
-                { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
-                { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
+                { source: `${WORK_DIR}/bundle*.js`, destination: JS_DEST },
+                { source: `${WORK_DIR}/bundle*.css`, destination: CSS_DEST },
+                { source: `${WORK_DIR}/*.eot`, destination: IMAGES_DEST },
+                { source: `${WORK_DIR}/*.svg`, destination: IMAGES_DEST },
+                { source: `${WORK_DIR}/*.woff2`, destination: IMAGES_DEST },
+                { source: `${WORK_DIR}/*.ttf`, destination: IMAGES_DEST },
+                { source: `${WORK_DIR}/*.woff`, destination: IMAGES_DEST },
               ],
-            },
-            {
-              delete: [
-                `${DEST}/bundle*`,
-                `${DEST}/*.eot`,
-                `${DEST}/*.svg`,
-                `${DEST}/*.woff2`,
-                `${DEST}/*.ttf`,
-                `${DEST}/*.woff`
-              ]
             }
           ]
         }
