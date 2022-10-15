@@ -51,8 +51,6 @@ module.exports = {
               // remove any previous FileManagerPlugin output
               `${CSS_DEST}/bundle.*`,
               `${JS_DEST}/bundle.*`,
-              // remove any previous webpack output
-              WORK_DIR,
             ],
           },
           onEnd: [
