@@ -52,12 +52,7 @@ module.exports = {
           onEnd: [
             {
               copy: [
-             *
                 { source: `${DEST}/bundle*.js`, destination: JS_DEST },
-             * arbitrary order unless runTasksInSeries (above) is true.
-             * But it needn't be, and comes with a mild performance hit.
-             */
-            copy: [
                 { source: `${DEST}/bundle*.css`, destination: CSS_DEST },
                 { source: `${DEST}/*.eot`, destination: IMAGES_DEST },
                 { source: `${DEST}/*.svg`, destination: IMAGES_DEST },
