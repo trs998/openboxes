@@ -1,10 +1,8 @@
-const os = require('fs');
-const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, 'src');
 const SRC = path.resolve(ROOT, 'js');
-const TMP = fs.mkdtemp(path.resolve(__dirname, 'build/tmp/webpack'));
+const DEST = path.resolve(__dirname, 'grails-app/assets');
 const BUILD_ASSETS = path.resolve(__dirname, 'build/assets');
 const ASSETS = path.resolve(ROOT, 'assets');
 const JS_DEST = path.resolve(__dirname, 'grails-app/assets/javascripts');
@@ -32,9 +30,10 @@ module.exports = {
       process: false,
     },
     output: {
-      path: TMP,
-      filename: 'javascripts/bundle.[hash].js',
       chunkFilename: 'bundle.[hash].[name].js',
+      filename: 'javascripts/bundle.[hash].js',
+      path: DEST,
+      publicPath: '/openboxes/assets/',
     },
     stats: {
       colors: false,
@@ -45,35 +44,39 @@ module.exports = {
         events: {
           onStart: {
             delete: [
-              /*
-               * TODO this would be cleaner if we could just say
-               * "remove everything not under source control", which is
-               * the intent of this block, namely, remove every file
-               * copied (or generated) by webpack and/or asset-pipeline.
-               */
-              BUILD_ASSETS,
-              `${CSS_DEST}/bundle.*`,
               `${JS_DEST}/bundle.*`,
+              `${CSS_DEST}/bundle.*`,
+              BUILD_ASSETS
             ]
           },
-          onEnd: {
-            /*
-             * Copy webpack's output to where asset-pipeline expects it.
+          onEnd: [
+            {
+              copy: [
              *
-             * Even though this is  a list, commands will execute in
+                { source: `${DEST}/bundle*.js`, destination: JS_DEST },
              * arbitrary order unless runTasksInSeries (above) is true.
              * But it needn't be, and comes with a mild performance hit.
              */
             copy: [
-              { source: `${TMP}/bundle*.css`, destination: CSS_DEST },
-              { source: `${TMP}/bundle*.js`, destination: JS_DEST },
-              { source: `${TMP}/*.eot`, destination: IMAGES_DEST },
-              { source: `${TMP}/*.svg`, destination: IMAGES_DEST },
-              { source: `${TMP}/*.ttf`, destination: IMAGES_DEST },
-              { source: `${TMP}/*.woff`, destination: IMAGES_DEST },
-              { source: `${TMP}/*.woff2`, destination: IMAGES_DEST },
-            ]
-          }
+                { source: `${DEST}/bundle*.css`, destination: CSS_DEST },
+                { source: `${DEST}/*.eot`, destination: IMAGES_DEST },
+                { source: `${DEST}/*.svg`, destination: IMAGES_DEST },
+                { source: `${DEST}/*.woff2`, destination: IMAGES_DEST },
+                { source: `${DEST}/*.ttf`, destination: IMAGES_DEST },
+                { source: `${DEST}/*.woff`, destination: IMAGES_DEST },
+              ],
+            },
+            {
+              delete: [
+                `${DEST}/bundle*`,
+                `${DEST}/*.eot`,
+                `${DEST}/*.svg`,
+                `${DEST}/*.woff2`,
+                `${DEST}/*.ttf`,
+                `${DEST}/*.woff`
+              ]
+            }
+          ]
         }
       }),
       new MiniCssExtractPlugin({
