@@ -2,7 +2,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, 'src');
 const SRC = path.resolve(ROOT, 'js');
-const WORK_DIR = path.resolve(__dirname, 'build/tmp/webpack');
+const WORK_DIR = path.resolve(__dirname, 'grails-app/assets');
 const BUILD_ASSETS = path.resolve(__dirname, 'build/assets');
 const ASSETS = path.resolve(ROOT, 'assets');
 const JS_DEST = path.resolve(__dirname, 'grails-app/assets/javascripts');
@@ -33,7 +33,7 @@ module.exports = {
       chunkFilename: 'bundle.[hash].[name].js',
       filename: 'javascripts/bundle.[hash].js',
       path: WORK_DIR,
-      publicPath: '/assets',
+      publicPath: '/openboxes/assets/',
     },
     stats: {
       colors: false,
