@@ -20,11 +20,12 @@ class ConfigHelper {
      */
     static String getAppVersion() {
         // build.app.version is readable by war files, app.version by local builds
-        return Holders.grailsApplication.metadata.getProperty(
-            'build.app.version',
-            String,
-            Holders.grailsApplication.config.getProperty('app.version')
-        )
+        return Holders.grailsApplication.metadata.getProperty('info.app.version')
+//        return Holders.grailsApplication.metadata.getProperty(
+//            'build.app.version',
+//            String,
+//            Holders.grailsApplication.config.getProperty('app.version')
+//        )
     }
 
     static String getBranchName(GitProperties gitProperties) {

@@ -81,7 +81,6 @@ group 'com.openboxes'
 mainClassName = 'org.pih.warehouse.Application'
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
-version '0.9.0-SNAPSHOT'
 
 assetCompile {
     dependsOn 'npm_run_bundle'
