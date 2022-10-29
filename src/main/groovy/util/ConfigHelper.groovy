@@ -21,9 +21,12 @@ class ConfigHelper {
 
     static String getBranchName(GitProperties gitProperties) {
         // build.git.branch is set by bamboo; gitProperties.branch from git
-        log.warn "could be ${gitProperties.branch} or ${Holders.grailsApplication.metadata.getProperty('build.git.branch')}"
+        gitProperties.iterator().each {
+            log.warn("${it.key}, ${it.value}")
+        }
+        log.warn "could be ${gitProperties} or ${Holders.grailsApplication.metadata.getProperty('build.git.branch')}"
         return Holders.grailsApplication.metadata.getProperty(
-            'build.git.branch',
+            'build.git.revision',
             String,
             gitProperties.branch
         )
