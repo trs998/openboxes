@@ -10,26 +10,18 @@
 package util
 
 import grails.util.Holders
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.springframework.boot.info.GitProperties
 
 // See http://jira.codehaus.org/browse/GRAILS-6515
 class ConfigHelper {
 
-    /**
-     * Return the version of the application, as specified in build.gradle.
-     */
-    static String getAppVersion() {
-        // build.app.version is readable by war files, app.version by local builds
-        return Holders.grailsApplication.metadata.getProperty('info.app.version')
-//        return Holders.grailsApplication.metadata.getProperty(
-//            'build.app.version',
-//            String,
-//            Holders.grailsApplication.config.getProperty('app.version')
-//        )
-    }
+    private static final Logger log = LoggerFactory.getLogger(ConfigHelper)
 
     static String getBranchName(GitProperties gitProperties) {
         // build.git.branch is set by bamboo; gitProperties.branch from git
+        log.warn "could be ${gitProperties.branch} or ${Holders.grailsApplication.metadata.getProperty('build.git.branch')}"
         return Holders.grailsApplication.metadata.getProperty(
             'build.git.branch',
             String,

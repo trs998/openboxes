@@ -707,7 +707,6 @@ buildProperties.doLast {
         }
     }
 
-    properties.setProperty('build.app.version', project.version.toString())
     properties.setProperty('build.host', InetAddress.localHost.hostName)
     properties.setProperty('build.java.version', System.getProperty('java.version'))
     properties.setProperty('build.tag', env.BUILD_TAG ?: 'N/A')
@@ -715,7 +714,7 @@ buildProperties.doLast {
     properties.setProperty('build.username', System.properties['user.name'])
 
     if (env.bamboo_buildNumber) {
-        properties.setProperty('build.git.branch', env.bamboo_planRepository_branchDisplayName)
+        properties.setProperty('build.git.branch', env.bamboo_planRepository_branch)
         properties.setProperty('build.git.revision', env.bamboo_planRepository_revision)
         properties.setProperty('build.number', env.bamboo_buildNumber)
     }

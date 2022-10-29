@@ -73,13 +73,7 @@
                                     </label>
                                 </td>
                                 <td class="value">
-                                    0. ${grailsApplication.metadata.applicationVersion}  // empty
-                                    1. ${grailsApplication.metadata.getProperty('info.app.version')}  // 'unspecified'
-                                    2. ${grailsApplication.config.getProperty('info.app.version')}  // 'unspecified'
-                                    3. ${grailsApplication.metadata.getProperty('app.version')}  // empty
-                                    4. ${grailsApplication.config.getProperty('app.version')}  // empty
-
-                                    5. ${ConfigHelper.getAppVersion()} &nbsp;
+                                    <g:meta name="info.app.version"/> &nbsp;
                                     <g:if test="${User.get(session?.user?.id)?.roles?.contains(Role.findByRoleType('ROLE_ADMIN'))}">
                                         <g:link controller="admin" action="showUpgrade"><warehouse:message code="application.upgrade.label"/></g:link>
                                     </g:if>

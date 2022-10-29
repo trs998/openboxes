@@ -1,5 +1,4 @@
 <%@ page import="org.pih.warehouse.core.Location" %>
-<%@ page import="util.ConfigHelper" %>
 <html>
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
@@ -7,19 +6,19 @@
         <title><warehouse:message code="default.appstatus.label" default="App Status" /></title>
 		<!-- Specify content to overload like global navigation links, page titles, etc. -->
 		<content tag="pageTitle"><warehouse:message code="default.appstatus.label" default="App Status" /></content>
-		<content tag="menuTitle"><warehouse:message code="default.appstatus.label" default="App Status" /></content>		
+		<content tag="menuTitle"><warehouse:message code="default.appstatus.label" default="App Status" /></content>
 		<content tag="globalLinksMode">append</content>
 		<content tag="localLinksMode">override</content>
 		<content tag="globalLinks"><g:render template="global"/></content>
 		<content tag="localLinks"><g:render template="local"/></content>
     </head>
-    <body>        
+    <body>
 		<div id="settings" role="main" class="yui-gb">
 			<!-- the first child of a Grid needs the "first" class -->
 			<div class="yui-u first">
 				<h1>Application Status</h1>
 				<ul>
-					<li>App version: ${ConfigHelper.getAppVersion()} /></li>
+					<li>App version: <g:meta name="info.app.version" /></li>
 					<li>Grails version: <g:meta name="info.app.grailsVersion" /></li>
 					<li>JVM version: ${System.getProperty('java.version')}</li>
 					<li>Controllers: ${grailsApplication.controllerClasses.size()}</li>
@@ -27,7 +26,7 @@
 					<li>Services: ${grailsApplication.serviceClasses.size()}</li>
 					<li>Tag Libraries: ${grailsApplication.tagLibClasses.size()}</li>
 				</ul>
-			</div>				
+			</div>
 			<div class="yui-u">
 				<h1>Installed Plugins</h1>
 				<ul>
@@ -43,8 +42,8 @@
 					<g:each var="c" in="${grailsApplication.controllerClasses}">
 					<li class="controller"><g:link controller="${c.logicalPropertyName}">${c.name}</g:link></li>
 					</g:each>
-				</ul>									  
-			</div>	
+				</ul>
+			</div>
 		</div>
     </body>
 </html>
