@@ -6,7 +6,7 @@
         <g:message code="application.grailsVersion.label"/>: &nbsp; <b><g:meta name="info.app.grailsVersion"></g:meta></b> &nbsp;&nbsp; | &nbsp;&nbsp;
         <g:message code="application.version.label"/>: &nbsp;<b><a href="https://github.com/openboxes/openboxes/releases/tag/v${g.meta(name:'info.app.version')}"><g:meta name="info.app.version"/></a></b>&nbsp;&nbsp; | &nbsp;&nbsp;
         <g:if test="${gitProperties}">
-            <g:message code="application.branchName.label"/>: <b>${ConfigHelper.getBranchName(gitProperties)}</b>&nbsp;&nbsp; | &nbsp;&nbsp;
+            <g:message code="application.branchName.label"/>: <b><g:meta name="build.git.branch"/></b>&nbsp;&nbsp; | &nbsp;&nbsp;
             <g:message code="application.buildNumber.label"/>: <b><a href="https://github.com/openboxes/openboxes/commit/${gitProperties?.commitId}">${gitProperties?.shortCommitId}</a></b>&nbsp;&nbsp; | &nbsp;&nbsp;
         </g:if>
 		<g:message code="application.environment.label"/>: <b>${grails.util.Environment?.current?.name}</b> &nbsp;&nbsp; | &nbsp;&nbsp;

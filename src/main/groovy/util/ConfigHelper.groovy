@@ -19,19 +19,6 @@ class ConfigHelper {
 
     private static final Logger log = LoggerFactory.getLogger(ConfigHelper)
 
-    static String getBranchName(GitProperties gitProperties) {
-        // build.git.branch is set by bamboo; gitProperties.branch from git
-        gitProperties.iterator().each {
-            log.warn("${it.key}, ${it.value}")
-        }
-        log.warn "could be ${gitProperties} or ${Holders.grailsApplication.metadata.getProperty('build.git.branch')}"
-        return Holders.grailsApplication.metadata.getProperty(
-            'build.git.branch',
-            String,
-            gitProperties.branch
-        )
-    }
-
     static getContextPath() {
         String contextPath = Holders.grailsApplication.config.server.contextPath
         return (contextPath != '/') ? contextPath : ''

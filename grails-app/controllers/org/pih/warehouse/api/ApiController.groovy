@@ -21,7 +21,6 @@ import org.pih.warehouse.core.User
 import org.pih.warehouse.product.Product
 import org.pih.warehouse.requisition.RequisitionType
 import org.springframework.boot.info.GitProperties
-import util.ConfigHelper
 
 import java.text.DateFormat
 import java.text.SimpleDateFormat
@@ -138,7 +137,7 @@ class ApiController {
         boolean isImpersonated = session.impersonateUserId ? true : false
         def buildNumber = gitProperties.shortCommitId
         def buildDate = grailsApplication.metadata.getProperty('build.time') ?: messageSource.getMessage('application.realTimeBuild.label', null, locale)
-        def branchName = ConfigHelper.getBranchName(gitProperties)
+        def branchName = grailsApplication.metadata.getProperty('build.git.branch')
         def grailsVersion = grailsApplication.metadata.getProperty('info.app.grailsVersion')
         def appVersion = grailsApplication.metadata.getProperty('info.app.version')
         def environment = Environment.current

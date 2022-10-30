@@ -715,18 +715,32 @@ buildProperties.doLast {
         }
     }
 
-    properties.with {
-        setProperty('build.host', InetAddress.localHost.hostName)
+    String branchName
+    if (env.bamboo_customRevision) {
+        // bamboo's "Run customized build" with a custom revision
+        if (env.bamboo_planRepository_revision?.startsWith(env.bamboo_customRevision)) {
+            // custom revision is a sha: try to get branch info elsewhere
+            branchName = gitProps.getProperty('git.branch')
+        } else {
+            // custom revision is a literal branch or tag name: we can use it
+            branchName = env.bamboo_customRevision
+        }
+    } else {
+        /*
+         * No custom revision (or not built via bamboo): use bamboo's default
+         * branch name if available, or gradle-git-properties data if not. (The
+         * latter can't always infer the branch name when run within bamboo.)
+         */
+        branchName = env.bamboo_planRepository_branch ?: gitProps.getProperty('git.branch')
+    }
 
+    properties.with {
+        setProperty('build.git.branch', branchName)
+        setProperty('build.host', InetAddress.localHost.hostName)
         setProperty('build.java.version', System.getProperty('java.version'))
         setProperty('build.tag', env.BUILD_TAG ?: 'N/A')
         setProperty('build.time', LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME))
         setProperty('build.username', System.properties['user.name'])
-        setProperty('build.git.branch',
-            env.bamboo_customRevision ?:
-                env.bamboo_planRepository_branch ?:
-                    gitProps.getProperty('git.branch')
-        )
     }
 
     grailsBuildInfoFile.withOutputStream {

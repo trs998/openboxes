@@ -1,7 +1,6 @@
 <%@ page import="org.pih.warehouse.core.RoleType" %>
 <%@ page import="org.pih.warehouse.core.User" %>
 <%@ page import="org.pih.warehouse.core.Role" %>
-<%@ page import="util.ConfigHelper" %>
 <html>
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
@@ -106,7 +105,7 @@
                                     </label>
                                 </td>
                                 <td class="value">
-                                    ${ConfigHelper.getBranchName(gitProperties)}
+                                    <g:meta name="build.git.branch"/>
                                 </td>
                             </tr>
                             <tr class="prop">
