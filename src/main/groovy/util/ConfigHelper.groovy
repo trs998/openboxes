@@ -26,7 +26,7 @@ class ConfigHelper {
         }
         log.warn "could be ${gitProperties} or ${Holders.grailsApplication.metadata.getProperty('build.git.branch')}"
         return Holders.grailsApplication.metadata.getProperty(
-            'build.git.revision',
+            'build.git.branch',
             String,
             gitProperties.branch
         )

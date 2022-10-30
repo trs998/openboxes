@@ -707,16 +707,26 @@ buildProperties.doLast {
         }
     }
 
-    properties.setProperty('build.host', InetAddress.localHost.hostName)
-    properties.setProperty('build.java.version', System.getProperty('java.version'))
-    properties.setProperty('build.tag', env.BUILD_TAG ?: 'N/A')
-    properties.setProperty('build.time', LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME))
-    properties.setProperty('build.username', System.properties['user.name'])
+    Properties gitProps = new Properties()
+    File gitPropertiesFile = new File("${project.rootDir}/build/resources/main/git.properties")
+    if (gitPropertiesFile?.canRead()) {
+        gitPropertiesFile?.withInputStream {
+            gitProps.load(it)
+        }
+    }
 
-    if (env.bamboo_buildNumber) {
-        properties.setProperty('build.git.branch', env.bamboo_planRepository_branch)
-        properties.setProperty('build.git.revision', env.bamboo_planRepository_revision)
-        properties.setProperty('build.number', env.bamboo_buildNumber)
+    properties.with {
+        setProperty('build.host', InetAddress.localHost.hostName)
+
+        setProperty('build.java.version', System.getProperty('java.version'))
+        setProperty('build.tag', env.BUILD_TAG ?: 'N/A')
+        setProperty('build.time', LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME))
+        setProperty('build.username', System.properties['user.name'])
+        setProperty('build.git.branch',
+            env.bamboo_customRevision ?:
+                env.bamboo_planRepository_branch ?:
+                    gitProps.getProperty('git.branch')
+        )
     }
 
     grailsBuildInfoFile.withOutputStream {
