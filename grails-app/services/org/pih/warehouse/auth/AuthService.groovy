@@ -14,7 +14,32 @@ import org.pih.warehouse.core.User
 
 class AuthService {
 
-    static ThreadLocal<User> currentUser = new ThreadLocal<User>()
-    static ThreadLocal<Location> currentLocation = new ThreadLocal<Location>()
+    private static ThreadLocal<User> threadLocalUser
+    private static ThreadLocal<Location> threadLocalLocation
 
+    void setCurrentUser(User user) {
+        if (!threadLocalUser) {
+            threadLocalUser = new ThreadLocal<User>()
+        }
+        // previous implementation had an explicit get call
+        // threadLocalUser.set(user?.id ? User.get(user.id) : null)
+        threadLocalUser.set(user)
+    }
+
+    static User getCurrentUser() {
+        return threadLocalUser?.get()
+    }
+
+    void setCurrentLocation(Location location) {
+        if (!threadLocalLocation) {
+            threadLocalLocation = new ThreadLocal<Location>()
+        }
+        // previous implementation had an explicit get call
+        // threadLocalLocation.set(location?.id ? Location.get(location.id) : null)
+        threadLocalLocation.set(location)
+    }
+
+    static Location getCurrentLocation() {
+        return threadLocalLocation?.get()
+    }
 }
