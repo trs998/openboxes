@@ -95,8 +95,10 @@ shift $((OPTIND-1))
 
 export PATH=$PATH:$MYSQL_PATH
 
+set +u
 [ "$1" ] || usage
 [ "$#" -eq 1 ] || usage
+set -u
 
 REMOTE_HOST="$1"
 sql_basename="$REMOTE_HOST-$REMOTE_DB-$LOCAL_DB"
