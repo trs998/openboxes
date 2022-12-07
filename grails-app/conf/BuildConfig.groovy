@@ -167,6 +167,8 @@ grails.project.dependency.resolution = {
         compile 'org.xhtmlrenderer:flying-saucer-core:9.1.15'
         compile 'org.xhtmlrenderer:flying-saucer-pdf-openpdf:9.1.15'
         compile 'com.github.librepdf:openpdf:1.2.0'
+
+        compile 'com.newrelic.agent.java:newrelic-api:6.5.4'
     }
     plugins {
 
