@@ -34,7 +34,7 @@ $ sudo chown -R tomcat:tomcat /opt/apache-tomcat-7.0.94
 ```
 
 ## Determine Java JRE path
-Copy and paste the output. It will be used to replace `<PASTE_PATH_TO_JRE_HERE>` in tomcat.service.
+Copy and paste the output, but remove the /bin/java from the end as these are added on and will end up duplicated. It will be used to replace `<PASTE_PATH_TO_JRE_HERE>` in tomcat.service. For example, below you would take `/usr/lib/jvm/zulu-7-amd64/jre/` and paste it into the tomcat service configuration file.
 ```
 $ readlink -f /etc/alternatives/java
 /usr/lib/jvm/zulu-7-amd64/jre/bin/java
